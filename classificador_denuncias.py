@@ -3,18 +3,12 @@ import json
 import os
 import unicodedata
 import streamlit as st
-from openai import OpenAI
+import random
+from typing import Dict, Optional
 
 class ClassificadorDenuncias:
     def __init__(self):
-        # 1. Tenta pegar a chave de todas as formas possíveis
-        api_key = st.secrets.get("OPENAI_API_KEY")
-        
-        if not api_key:
-            st.error("🚨 CHAVE NÃO ENCONTRADA! Verifique o menu 'Secrets' no Streamlit Cloud.")
-            st.stop()
-
-        self.client = OpenAI(api_key=api_key)
+        # No modo simulação, não precisamos travar se a chave estiver vazia
         self.base_path = os.path.dirname(os.path.abspath(__file__))
         self.carregar_bases()
 
@@ -38,7 +32,10 @@ class ClassificadorDenuncias:
         return "".join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
     def processar_denuncia(self, endereco, denuncia, num_comunicacao="", num_mprj=""):
-        # Localização de Município (Local)
+        """
+        MODO SIMULAÇÃO: Este método finge que chama a IA.
+        """
+        # 1. Identificação de Município (Lógica local - continua funcionando real)
         municipio_nome = None
         end_upper = self.remover_acentos(endereco.upper())
         for m_chave in self.municipio_para_promotoria.keys():
@@ -51,33 +48,29 @@ class ClassificadorDenuncias:
             {"promotoria": "Promotoria não identificada", "email": "N/A", "telefone": "N/A", "municipio_oficial": municipio_nome or "Não identificado"}
         )
 
-        # LISTA DE TEMAS PARA A IA
-        temas_lista = list(self.temas_subtemas.keys())
-
-        # PROMPT DE ALTO IMPACTO (Estilo Manus AI)
-        prompt = f"""Responda obrigatoriamente em JSON.
-Analise a denúncia: "{denuncia}"
-
-Extraia os dados seguindo estas regras:
-- tema: Escolha um desta lista: {temas_lista}
-- subtema: O problema em 3 palavras.
-- empresa: O nome da marca ou empresa citada.
-- resumo: Uma frase curta começando com 'Denúncia referente a'.
-
-JSON de saída:"""
-
-        # REMOVEMOS O TRY/EXCEPT PARA O ERRO APARECER NA TELA SE FALHAR
-        response = self.client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "Você é um robô que só responde JSON técnico."},
-                {"role": "user", "content": prompt}
-            ],
-            response_format={"type": "json_object"},
-            temperature=0
-        )
+        # 2. SIMULAÇÃO DE INTELIGÊNCIA ARTIFICIAL
+        # Aqui sorteamos um tema real da sua base para simular a classificação
+        temas_reais = list(self.temas_subtemas.keys())
+        tema_simulado = random.choice(temas_reais) if temas_reais else "Serviços"
         
-        dados_ia = json.loads(response.choices[0].message.content)
+        # Simulamos a extração de uma empresa (pegando a primeira palavra em maiúscula, por exemplo)
+        palavras = denuncia.split()
+        empresa_simulada = "Empresa Teste SA"
+        for p in palavras:
+            if p.istitle() and len(p) > 3: # Se a palavra começar com maiúscula
+                empresa_simulada = p
+                break
+
+        dados_ia = {
+            "tema": tema_simulado,
+            "subtema": "Simulação de Problema",
+            "empresa": empresa_simulada,
+            "resumo": f"Denúncia referente a {tema_simulado.lower()} identificada no modo de teste."
+        }
+
+        # Simula um pequeno delay para parecer real
+        import time
+        time.sleep(1) 
 
         return {
             "num_comunicacao": num_comunicacao,
@@ -88,8 +81,8 @@ JSON de saída:"""
             "promotoria": promotoria_info["promotoria"],
             "email": promotoria_info["email"],
             "telefone": promotoria_info["telefone"],
-            "tema": dados_ia.get("tema", "Serviços"),
-            "subtema": dados_ia.get("subtema", "Não identificado"),
-            "empresa": dados_ia.get("empresa", "Não identificada"),
-            "resumo": dados_ia.get("resumo", "Resumo indisponível")
+            "tema": dados_ia["tema"],
+            "subtema": dados_ia["subtema"],
+            "empresa": dados_ia["empresa"],
+            "resumo": dados_ia["resumo"]
         }
