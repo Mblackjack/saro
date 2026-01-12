@@ -101,48 +101,44 @@ class ClassificadorDenuncias:
         return None
 
     def gerar_resumo(self, denuncia: str) -> str:
-        """Gera um resumo conciso da denúncia usando gpt-4o-mini"""
+        """Gera um resumo técnico e conciso"""
         try:
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "Você é um assistente que cria resumos concisos de denúncias. Responda com UMA ÚNICA FRASE começando com 'Denúncia referente a'. Máximo 15 palavras."},
-                    {"role": "user", "content": f"Resuma esta denúncia: {denuncia}"}
+                    {"role": "system", "content": "Você é um triador do Ministério Público. Resuma a denúncia em no máximo 15 palavras, de forma técnica, começando sempre com 'Denúncia referente a...'."},
+                    {"role": "user", "content": denuncia}
                 ],
-                temperature=0.3,
-                max_tokens=50
+                temperature=0.2 # Mais focado
             )
             return response.choices[0].message.content.strip()
-        except Exception:
-            return "Denúncia referente a reclamação do consumidor."
+        except:
+            return "Erro ao gerar resumo automático."
 
     def classificar_denuncia(self, denuncia: str) -> Dict:
-        """Classifica a denúncia retornando obrigatoriamente um objeto JSON"""
+        """Classifica com base na sua lista oficial de temas"""
         try:
+            # Pegamos os temas que você carregou do JSON para ensinar a IA
+            lista_temas = ", ".join(self.temas_subtemas.keys())
+            
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": """Você é um classificador de denúncias. Analise a denúncia e retorne um JSON com:
-                    - tema: Alimentação, Comércio, Educação, Finanças, Habitação, Informações, Lazer, Produtos, Saúde, Serviços, Telecomunicações ou Transporte
-                    - subtema: O subtema específico dentro do tema
-                    - empresa: Nome da empresa mencionada (ou "Não identificada")
+                    {"role": "system", "content": f"""Você é um classificador jurídico. 
+                    Analise a denúncia e extraia:
+                    1. TEMA: Escolha estritamente um destes: {lista_temas}.
+                    2. SUBTEMA: O problema específico relatado.
+                    3. EMPRESA: O nome da empresa ou marca reclamada (ex: 'Enel', 'Samsung', 'Banco X').
                     
-                    Responda APENAS com o JSON puro."""},
-                    {"role": "user", "content": f"Classifique: {denuncia}"}
+                    Retorne apenas o JSON puro, sem comentários."""},
+                    {"role": "user", "content": f"Denúncia: {denuncia}"}
                 ],
-                response_format={"type": "json_object"}, # Garante retorno em JSON
-                temperature=0.3
+                response_format={"type": "json_object"},
+                temperature=0.1 # Rigidez total nas regras
             )
-            
-            content = response.choices[0].message.content.strip()
-            return json.loads(content)
-            
+            return json.loads(response.choices[0].message.content)
         except Exception:
-            return {
-                "tema": "Serviços",
-                "subtema": "Não classificado",
-                "empresa": "Não identificada"
-            }
+            return {"tema": "Serviços", "subtema": "Não identificado", "empresa": "Não identificada"}
 
     def processar_denuncia(self, endereco: str, denuncia: str, num_comunicacao: str = "", num_mprj: str = "") -> Dict:
         """Fluxo completo de processamento e inteligência da denúncia"""
