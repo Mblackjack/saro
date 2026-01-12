@@ -3,15 +3,15 @@ import json
 import os
 import unicodedata
 import streamlit as st
-from typing import Dict, Optional
 from openai import OpenAI
 
 class ClassificadorDenuncias:
     def __init__(self):
-        # Busca a chave nos Secrets do Streamlit
+        # 1. Tenta pegar a chave de todas as formas possíveis
         api_key = st.secrets.get("OPENAI_API_KEY")
+        
         if not api_key:
-            st.error("❌ ERRO: OPENAI_API_KEY não encontrada nos Secrets.")
+            st.error("🚨 CHAVE NÃO ENCONTRADA! Verifique o menu 'Secrets' no Streamlit Cloud.")
             st.stop()
 
         self.client = OpenAI(api_key=api_key)
@@ -19,34 +19,26 @@ class ClassificadorDenuncias:
         self.carregar_bases()
 
     def carregar_bases(self):
-        """Carrega os arquivos JSON locais"""
         try:
             with open(os.path.join(self.base_path, "base_temas_subtemas.json"), 'r', encoding='utf-8') as f:
                 self.temas_subtemas = json.load(f)
             with open(os.path.join(self.base_path, "base_promotorias.json"), 'r', encoding='utf-8') as f:
                 self.base_promotorias = json.load(f)
         except Exception as e:
-            st.error(f"❌ Erro ao carregar bases JSON: {e}")
+            st.error(f"❌ Erro ao carregar arquivos JSON: {e}")
             st.stop()
             
-        self.municipio_para_promotoria = {}
-        for nucleo, dados in self.base_promotorias.items():
-            for municipio in dados["municipios"]:
-                self.municipio_para_promotoria[municipio.upper()] = {
-                    "promotoria": dados["promotoria"],
-                    "email": dados["email"],
-                    "telefone": dados["telefone"],
-                    "municipio_oficial": municipio
-                }
+        self.municipio_para_promotoria = {
+            m.upper(): {"promotoria": d["promotoria"], "email": d["email"], "telefone": d["telefone"], "municipio_oficial": m}
+            for nucleo, d in self.base_promotorias.items() for m in d["municipios"]
+        }
 
-    def remover_acentos(self, texto: str) -> str:
+    def remover_acentos(self, texto: str):
         if not texto: return ""
         return "".join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
-    def processar_denuncia(self, endereco: str, denuncia: str, num_comunicacao: str = "", num_mprj: str = "") -> Dict:
-        """Processa a denúncia usando uma única chamada de IA para evitar falhas parciais"""
-        
-        # 1. Identifica Município (Lógica local)
+    def processar_denuncia(self, endereco, denuncia, num_comunicacao="", num_mprj=""):
+        # Localização de Município (Local)
         municipio_nome = None
         end_upper = self.remover_acentos(endereco.upper())
         for m_chave in self.municipio_para_promotoria.keys():
@@ -59,42 +51,33 @@ class ClassificadorDenuncias:
             {"promotoria": "Promotoria não identificada", "email": "N/A", "telefone": "N/A", "municipio_oficial": municipio_nome or "Não identificado"}
         )
 
-        # 2. Chamada Única para a IA
-        temas_validos = list(self.temas_subtemas.keys())
+        # LISTA DE TEMAS PARA A IA
+        temas_lista = list(self.temas_subtemas.keys())
+
+        # PROMPT DE ALTO IMPACTO (Estilo Manus AI)
+        prompt = f"""Responda obrigatoriamente em JSON.
+Analise a denúncia: "{denuncia}"
+
+Extraia os dados seguindo estas regras:
+- tema: Escolha um desta lista: {temas_lista}
+- subtema: O problema em 3 palavras.
+- empresa: O nome da marca ou empresa citada.
+- resumo: Uma frase curta começando com 'Denúncia referente a'.
+
+JSON de saída:"""
+
+        # REMOVEMOS O TRY/EXCEPT PARA O ERRO APARECER NA TELA SE FALHAR
+        response = self.client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "Você é um robô que só responde JSON técnico."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"},
+            temperature=0
+        )
         
-        prompt = f"""Você é um triador do Ministério Público. Analise a DENÚNCIA abaixo.
-
-LISTA DE TEMAS PERMITIDOS:
-{temas_validos}
-
-OBJETIVOS:
-1. TEMA: Escolha o mais adequado da lista acima.
-2. SUBTEMA: Identifique o problema central em 3 palavras.
-3. EMPRESA: Extraia o nome da empresa reclamada (ex: Enel, Light, Samsung, Banco Itaú).
-4. RESUMO: Escreva um resumo técnico de até 15 palavras começando com 'Denúncia referente a'.
-
-DENÚNCIA: "{denuncia}"
-
-Responda APENAS um objeto JSON assim:
-{{"tema": "TEMA ESCOLHIDO", "subtema": "SUBTEMA", "empresa": "NOME DA EMPRESA", "resumo": "RESUMO"}}"""
-
-        try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "system", "content": "Você é um classificador de dados puramente JSON."},
-                          {"role": "user", "content": prompt}],
-                response_format={"type": "json_object"},
-                temperature=0
-            )
-            dados_ia = json.loads(response.choices[0].message.content)
-        except Exception as e:
-            st.error(f"Erro na IA: {e}")
-            dados_ia = {
-                "tema": "Serviços", 
-                "subtema": "Erro de análise", 
-                "empresa": "Não identificada", 
-                "resumo": "Falha na comunicação com o cérebro da IA."
-            }
+        dados_ia = json.loads(response.choices[0].message.content)
 
         return {
             "num_comunicacao": num_comunicacao,
