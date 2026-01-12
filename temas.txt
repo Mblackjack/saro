@@ -1,0 +1,12 @@
+Alimentação
+Comércio
+Educação
+Finanças
+Habitação
+Informações
+Lazer
+Produtos
+Saúde
+Serviços
+Telecomunicações
+Transporte

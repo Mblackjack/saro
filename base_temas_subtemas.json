@@ -1,0 +1,103 @@
+{
+  "Alimentação": [
+    "Alimentação e Bebidas",
+    "Lanchonetes e Restaurantes",
+    "Resíduos de Agrotóxicos e Outros Contaminantes"
+  ],
+  "Comércio": [
+    "Lojas físicas em geral",
+    "Supermercados e Mercearias",
+    "Vendas On-line",
+    "Vendas por Telefone ou Catálogo"
+  ],
+  "Educação": [
+    "Cursos",
+    "Escolas",
+    "Faculdades"
+  ],
+  "Finanças": [
+    "Bancos e Financeiras",
+    "Cartões",
+    "Consórcios",
+    "Previdência Privada",
+    "Seguros",
+    "Serviços de Proteção ao Crédito",
+    "Tributos"
+  ],
+  "Habitação": [
+    "Construtoras",
+    "Financiamentos",
+    "Imóveis"
+  ],
+  "Informações": [
+    "Publicidade",
+    "Rótulos e Manuais",
+    "Segurança e Privacidade de Dados"
+  ],
+  "Lazer": [
+    "Casas de Show",
+    "Cinemas",
+    "Clubes",
+    "Esportes",
+    "Hotéis",
+    "Parque de Diversões",
+    "Promotoras de Eventos",
+    "Teatros",
+    "Turismo"
+  ],
+  "Produtos": [
+    "Brinquedos",
+    "Combustíveis",
+    "Eletrodomésticos e Utensílios do Lar",
+    "Eletrônicos e Informática",
+    "Gás de Cozinha (Botijão)",
+    "Material de Construção",
+    "Papelaria e Livros",
+    "Químicos e Biológicos",
+    "Veículos"
+  ],
+  "Saúde": [
+    "Farmácias e Drogarias",
+    "Hospitais e Clínicas",
+    "Medicamentos e Cosméticos",
+    "Planos de Saúde",
+    "Profissionais Liberais",
+    "Óticas"
+  ],
+  "Serviços": [
+    "Academias e Afins",
+    "Assistência Jurídica",
+    "Assistência Técnica",
+    "DETRAN e Centros de Formação de Condutores",
+    "Estacionamentos",
+    "Funerários",
+    "Gás",
+    "Iluminação Pública",
+    "Locação de Veículos",
+    "Luz",
+    "Postal",
+    "Procons e Vigilância Sanitária (Criação e Estruturação)",
+    "SAC",
+    "Serviços On-line (E-mails, Aplicativos, Redes Sociais, Hospedagem de Sites, etc.)",
+    "Sistemas de Pagamento Automático (em Pedágios, em Estacionamentos, etc.)",
+    "Água"
+  ],
+  "Telecomunicações": [
+    "Internet (Conexão)",
+    "TV por Assinatura",
+    "Telefonia (Fixa e Móvel)"
+  ],
+  "Transporte": [
+    "Aéreo",
+    "Barcas",
+    "De Mercadoria",
+    "Escolar",
+    "Metrô",
+    "Passagens e Cartões Recarregáveis",
+    "Pedágios e Rodovias",
+    "Trem",
+    "Táxi e Aplicativos de Transporte",
+    "VLT, Bondes e Afins",
+    "Ônibus"
+  ]
+}
