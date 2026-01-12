@@ -1,40 +1,54 @@
 # -*- coding: utf-8 -*-
 """
 Classificador de Denúncias do Consumidor - SARO v4.2
-Melhoria na identificação de municípios e promotorias.
+Versão Corrigida para Produção (Streamlit Cloud)
 """
 
 import json
 import os
 import re
 import unicodedata
+import streamlit as st
 from typing import Dict, List, Optional
 from openai import OpenAI
 
 class ClassificadorDenuncias:
     def __init__(self):
-        # Inicializa o cliente OpenAI (certifique-se de que a variável de ambiente OPENAI_API_KEY esteja configurada)
-        self.client = OpenAI()
+        # SEGURANÇA: Busca a chave nos Secrets do Streamlit ou variáveis de ambiente
+        # Isso resolve o erro '401 - Incorrect API key'
+        api_key = st.secrets.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
         
-        # CORREÇÃO: Pega o diretório onde este arquivo (classificador_denuncias.py) está localizado
+        if not api_key:
+            st.error("ERRO CRÍTICO: Chave da OpenAI (OPENAI_API_KEY) não configurada nos Secrets do Streamlit.")
+            st.stop()
+
+        self.client = OpenAI(api_key=api_key)
+        
+        # PORTABILIDADE: Define o caminho baseado na localização atual do arquivo
+        # Isso resolve o erro 'FileNotFoundError' no Streamlit Cloud
         self.base_path = os.path.dirname(os.path.abspath(__file__))
         
         self.carregar_bases()
 
     def carregar_bases(self):
-        """Carrega as bases de dados de temas, subtemas e promotorias"""
+        """Carrega as bases de dados de temas, subtemas e promotorias de forma dinâmica"""
         caminho_temas = os.path.join(self.base_path, "base_temas_subtemas.json")
         caminho_promotorias = os.path.join(self.base_path, "base_promotorias.json")
 
-        # Verifica se os arquivos existem antes de tentar abrir
+        # Verifica a existência dos arquivos antes de tentar carregar
         if not os.path.exists(caminho_temas) or not os.path.exists(caminho_promotorias):
-            raise FileNotFoundError(f"Erro: Arquivos JSON não encontrados em {self.base_path}. Verifique se eles foram enviados para o GitHub.")
+            st.error(f"ERRO: Arquivos JSON não encontrados em: {self.base_path}")
+            st.stop()
 
-        with open(caminho_temas, 'r', encoding='utf-8') as f:
-            self.temas_subtemas = json.load(f)
-        
-        with open(caminho_promotorias, 'r', encoding='utf-8') as f:
-            self.base_promotorias = json.load(f)
+        try:
+            with open(caminho_temas, 'r', encoding='utf-8') as f:
+                self.temas_subtemas = json.load(f)
+            
+            with open(caminho_promotorias, 'r', encoding='utf-8') as f:
+                self.base_promotorias = json.load(f)
+        except Exception as e:
+            st.error(f"Erro ao ler arquivos JSON: {str(e)}")
+            st.stop()
             
         # Criar mapeamento direto de município para dados da promotoria
         self.municipio_para_promotoria = {}
@@ -48,25 +62,24 @@ class ClassificadorDenuncias:
                 }
 
     def remover_acentos(self, texto: str) -> str:
-        """Remove acentos de uma string"""
+        """Remove acentos de uma string para facilitar a busca"""
         if not texto: return ""
         return "".join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
     def extrair_municipio(self, endereco: str) -> Optional[str]:
-        """Extrai o município do endereço fornecido usando busca textual e LLM como fallback"""
+        """Extrai o município usando busca direta ou fallback com gpt-4o-mini"""
         if not endereco: return None
         
         endereco_upper = self.remover_acentos(endereco.upper())
         
-        # Busca direta
+        # Busca direta no dicionário de municípios
         for municipio_chave in self.municipio_para_promotoria.keys():
             municipio_chave_sem_acento = self.remover_acentos(municipio_chave)
             if municipio_chave_sem_acento in endereco_upper:
                 return self.municipio_para_promotoria[municipio_chave]["municipio_oficial"]
         
-        # Fallback com LLM
+        # Fallback com modelo correto (gpt-4o-mini)
         try:
-            # CORREÇÃO: Modelo alterado de 'gpt-4.1-mini' para 'gpt-4o-mini'
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
@@ -80,8 +93,7 @@ class ClassificadorDenuncias:
             municipio_extraido_sem_acento = self.remover_acentos(municipio_extraido)
             
             for municipio_chave in self.municipio_para_promotoria.keys():
-                municipio_chave_sem_acento = self.remover_acentos(municipio_chave)
-                if municipio_chave_sem_acento == municipio_extraido_sem_acento:
+                if self.remover_acentos(municipio_chave) == municipio_extraido_sem_acento:
                     return self.municipio_para_promotoria[municipio_chave]["municipio_oficial"]
         except Exception:
             pass
@@ -89,9 +101,8 @@ class ClassificadorDenuncias:
         return None
 
     def gerar_resumo(self, denuncia: str) -> str:
-        """Gera um resumo de uma frase da denúncia"""
+        """Gera um resumo conciso da denúncia usando gpt-4o-mini"""
         try:
-            # CORREÇÃO: Modelo alterado para 'gpt-4o-mini'
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
@@ -106,38 +117,26 @@ class ClassificadorDenuncias:
             return "Denúncia referente a reclamação do consumidor."
 
     def classificar_denuncia(self, denuncia: str) -> Dict:
-        """Classifica a denúncia usando LLM"""
+        """Classifica a denúncia retornando obrigatoriamente um objeto JSON"""
         try:
-            # CORREÇÃO: Modelo alterado para 'gpt-4o-mini'
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": """Você é um classificador de denúncias. Analise a denúncia e retorne um JSON com:
-                    - tema: Um dos seguintes: Alimentação, Comércio, Educação, Finanças, Habitação, Informações, Lazer, Produtos, Saúde, Serviços, Telecomunicações, Transporte
+                    - tema: Alimentação, Comércio, Educação, Finanças, Habitação, Informações, Lazer, Produtos, Saúde, Serviços, Telecomunicações ou Transporte
                     - subtema: O subtema específico dentro do tema
                     - empresa: Nome da empresa mencionada (ou "Não identificada")
                     
-                    Responda APENAS com o JSON, sem explicações."""},
+                    Responda APENAS com o JSON puro."""},
                     {"role": "user", "content": f"Classifique: {denuncia}"}
                 ],
-                temperature=0.3,
-                max_tokens=200
+                response_format={"type": "json_object"}, # Garante retorno em JSON
+                temperature=0.3
             )
             
-            try:
-                # Remove possíveis marcações de código markdown do JSON
-                content = response.choices[0].message.content.strip()
-                if content.startswith("```json"):
-                    content = content.replace("```json", "").replace("```", "").strip()
-                
-                resultado = json.loads(content)
-                return resultado
-            except json.JSONDecodeError:
-                return {
-                    "tema": "Serviços",
-                    "subtema": "Serviços On-line",
-                    "empresa": "Não identificada"
-                }
+            content = response.choices[0].message.content.strip()
+            return json.loads(content)
+            
         except Exception:
             return {
                 "tema": "Serviços",
@@ -146,7 +145,7 @@ class ClassificadorDenuncias:
             }
 
     def processar_denuncia(self, endereco: str, denuncia: str, num_comunicacao: str = "", num_mprj: str = "") -> Dict:
-        """Processa uma denúncia completa"""
+        """Fluxo completo de processamento e inteligência da denúncia"""
         municipio = self.extrair_municipio(endereco)
         
         if municipio and municipio.upper() in self.municipio_para_promotoria:
