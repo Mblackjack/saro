@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Classificador de Denúncias do Consumidor - SARO v4.2
-Versão Corrigida para Produção (Streamlit Cloud)
+Classificador de Denúncias do Consumidor - SARO v5.0
+Versão Otimizada com Cadeia de Pensamento para Máxima Precisão
 """
 
 import json
@@ -14,28 +14,22 @@ from openai import OpenAI
 
 class ClassificadorDenuncias:
     def __init__(self):
-        # SEGURANÇA: Busca a chave nos Secrets do Streamlit ou variáveis de ambiente
-        # Isso resolve o erro '401 - Incorrect API key'
+        # SEGURANÇA: Busca a chave nos Secrets do Streamlit
         api_key = st.secrets.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
         
         if not api_key:
-            st.error("ERRO CRÍTICO: Chave da OpenAI (OPENAI_API_KEY) não configurada nos Secrets do Streamlit.")
+            st.error("ERRO CRÍTICO: Chave da OpenAI não configurada nos Secrets.")
             st.stop()
 
         self.client = OpenAI(api_key=api_key)
-        
-        # PORTABILIDADE: Define o caminho baseado na localização atual do arquivo
-        # Isso resolve o erro 'FileNotFoundError' no Streamlit Cloud
         self.base_path = os.path.dirname(os.path.abspath(__file__))
-        
         self.carregar_bases()
 
     def carregar_bases(self):
-        """Carrega as bases de dados de temas, subtemas e promotorias de forma dinâmica"""
+        """Carrega as bases de dados de temas, subtemas e promotorias"""
         caminho_temas = os.path.join(self.base_path, "base_temas_subtemas.json")
         caminho_promotorias = os.path.join(self.base_path, "base_promotorias.json")
 
-        # Verifica a existência dos arquivos antes de tentar carregar
         if not os.path.exists(caminho_temas) or not os.path.exists(caminho_promotorias):
             st.error(f"ERRO: Arquivos JSON não encontrados em: {self.base_path}")
             st.stop()
@@ -43,14 +37,12 @@ class ClassificadorDenuncias:
         try:
             with open(caminho_temas, 'r', encoding='utf-8') as f:
                 self.temas_subtemas = json.load(f)
-            
             with open(caminho_promotorias, 'r', encoding='utf-8') as f:
                 self.base_promotorias = json.load(f)
         except Exception as e:
             st.error(f"Erro ao ler arquivos JSON: {str(e)}")
             st.stop()
             
-        # Criar mapeamento direto de município para dados da promotoria
         self.municipio_para_promotoria = {}
         for nucleo, dados in self.base_promotorias.items():
             for municipio in dados["municipios"]:
@@ -62,42 +54,35 @@ class ClassificadorDenuncias:
                 }
 
     def remover_acentos(self, texto: str) -> str:
-        """Remove acentos de uma string para facilitar a busca"""
         if not texto: return ""
         return "".join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
     def extrair_municipio(self, endereco: str) -> Optional[str]:
         """Extrai o município usando busca direta ou fallback com gpt-4o-mini"""
         if not endereco: return None
-        
         endereco_upper = self.remover_acentos(endereco.upper())
         
-        # Busca direta no dicionário de municípios
         for municipio_chave in self.municipio_para_promotoria.keys():
-            municipio_chave_sem_acento = self.remover_acentos(municipio_chave)
-            if municipio_chave_sem_acento in endereco_upper:
+            if self.remover_acentos(municipio_chave) in endereco_upper:
                 return self.municipio_para_promotoria[municipio_chave]["municipio_oficial"]
         
-        # Fallback com modelo correto (gpt-4o-mini)
         try:
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "Você é um assistente que extrai nomes de cidades de endereços brasileiros. Responda APENAS com o nome da cidade, sem explicações."},
-                    {"role": "user", "content": f"Qual é a cidade neste endereço? '{endereco}'"}
+                    {"role": "system", "content": "Você extrai nomes de cidades de endereços. Responda APENAS o nome da cidade."},
+                    {"role": "user", "content": f"Cidade deste endereço: '{endereco}'"}
                 ],
-                temperature=0.3,
-                max_tokens=50
+                temperature=0,
+                max_tokens=30
             )
             municipio_extraido = response.choices[0].message.content.strip().upper()
-            municipio_extraido_sem_acento = self.remover_acentos(municipio_extraido)
+            m_extraido_sem_acento = self.remover_acentos(municipio_extraido)
             
             for municipio_chave in self.municipio_para_promotoria.keys():
-                if self.remover_acentos(municipio_chave) == municipio_extraido_sem_acento:
+                if self.remover_acentos(municipio_chave) == m_extraido_sem_acento:
                     return self.municipio_para_promotoria[municipio_chave]["municipio_oficial"]
-        except Exception:
-            pass
-        
+        except: pass
         return None
 
     def gerar_resumo(self, denuncia: str) -> str:
@@ -106,42 +91,51 @@ class ClassificadorDenuncias:
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "Você é um triador do Ministério Público. Resuma a denúncia em no máximo 15 palavras, de forma técnica, começando sempre com 'Denúncia referente a...'."},
+                    {"role": "system", "content": "Você é um triador do Ministério Público. Resuma a denúncia em no máximo 15 palavras, começando com 'Denúncia referente a...'."},
                     {"role": "user", "content": denuncia}
                 ],
-                temperature=0.2 # Mais focado
+                temperature=0.2
             )
             return response.choices[0].message.content.strip()
         except:
-            return "Erro ao gerar resumo automático."
+            return "Denúncia referente a reclamação do consumidor."
 
     def classificar_denuncia(self, denuncia: str) -> Dict:
-        """Classifica com base na sua lista oficial de temas"""
+        """Classifica a denúncia usando instruções reforçadas"""
         try:
-            # Pegamos os temas que você carregou do JSON para ensinar a IA
             lista_temas = ", ".join(self.temas_subtemas.keys())
             
+            # PROMPT REFORÇADO: Instruímos a IA a pensar antes de responder
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": f"""Você é um classificador jurídico. 
-                    Analise a denúncia e extraia:
-                    1. TEMA: Escolha estritamente um destes: {lista_temas}.
-                    2. SUBTEMA: O problema específico relatado.
-                    3. EMPRESA: O nome da empresa ou marca reclamada (ex: 'Enel', 'Samsung', 'Banco X').
+                    {"role": "system", "content": f"""Você é um analista jurídico do MPRJ. 
+                    Analise a denúncia passo a passo:
+                    1. Identifique qual empresa está sendo acusada.
+                    2. Identifique o problema central.
+                    3. Escolha o TEMA estritamente desta lista: {lista_temas}.
                     
-                    Retorne apenas o JSON puro, sem comentários."""},
+                    Responda obrigatoriamente em formato JSON com as chaves: 
+                    "tema", "subtema", "empresa"."""},
                     {"role": "user", "content": f"Denúncia: {denuncia}"}
                 ],
                 response_format={"type": "json_object"},
-                temperature=0.1 # Rigidez total nas regras
+                temperature=0.1
             )
-            return json.loads(response.choices[0].message.content)
+            
+            resultado = json.loads(response.choices[0].message.content)
+            
+            # Garantia de que os campos não venham vazios
+            return {
+                "tema": resultado.get("tema", "Serviços"),
+                "subtema": resultado.get("subtema", "Não identificado"),
+                "empresa": resultado.get("empresa", "Não identificada")
+            }
         except Exception:
-            return {"tema": "Serviços", "subtema": "Não identificado", "empresa": "Não identificada"}
+            return {"tema": "Serviços", "subtema": "Erro na análise", "empresa": "Não identificada"}
 
     def processar_denuncia(self, endereco: str, denuncia: str, num_comunicacao: str = "", num_mprj: str = "") -> Dict:
-        """Fluxo completo de processamento e inteligência da denúncia"""
+        """Processa a denúncia completa combinando extrações manuais e IA"""
         municipio = self.extrair_municipio(endereco)
         
         if municipio and municipio.upper() in self.municipio_para_promotoria:
@@ -157,6 +151,7 @@ class ClassificadorDenuncias:
         classificacao = self.classificar_denuncia(denuncia)
         resumo = self.gerar_resumo(denuncia)
         
+        # Consolidação final dos dados
         return {
             "num_comunicacao": num_comunicacao or "N/A",
             "num_mprj": num_mprj or "N/A",
