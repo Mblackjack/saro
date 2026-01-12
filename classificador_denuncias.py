@@ -13,16 +13,27 @@ from openai import OpenAI
 
 class ClassificadorDenuncias:
     def __init__(self):
+        # Inicializa o cliente OpenAI (certifique-se de que a variável de ambiente OPENAI_API_KEY esteja configurada)
         self.client = OpenAI()
-        self.base_path = "/home/ubuntu/mprj_denuncias"
+        
+        # CORREÇÃO: Pega o diretório onde este arquivo (classificador_denuncias.py) está localizado
+        self.base_path = os.path.dirname(os.path.abspath(__file__))
+        
         self.carregar_bases()
 
     def carregar_bases(self):
         """Carrega as bases de dados de temas, subtemas e promotorias"""
-        with open(f"{self.base_path}/base_temas_subtemas.json", 'r', encoding='utf-8') as f:
+        caminho_temas = os.path.join(self.base_path, "base_temas_subtemas.json")
+        caminho_promotorias = os.path.join(self.base_path, "base_promotorias.json")
+
+        # Verifica se os arquivos existem antes de tentar abrir
+        if not os.path.exists(caminho_temas) or not os.path.exists(caminho_promotorias):
+            raise FileNotFoundError(f"Erro: Arquivos JSON não encontrados em {self.base_path}. Verifique se eles foram enviados para o GitHub.")
+
+        with open(caminho_temas, 'r', encoding='utf-8') as f:
             self.temas_subtemas = json.load(f)
         
-        with open(f"{self.base_path}/base_promotorias.json", 'r', encoding='utf-8') as f:
+        with open(caminho_promotorias, 'r', encoding='utf-8') as f:
             self.base_promotorias = json.load(f)
             
         # Criar mapeamento direto de município para dados da promotoria
@@ -55,8 +66,9 @@ class ClassificadorDenuncias:
         
         # Fallback com LLM
         try:
+            # CORREÇÃO: Modelo alterado de 'gpt-4.1-mini' para 'gpt-4o-mini'
             response = self.client.chat.completions.create(
-                model="gpt-4.1-mini",
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": "Você é um assistente que extrai nomes de cidades de endereços brasileiros. Responda APENAS com o nome da cidade, sem explicações."},
                     {"role": "user", "content": f"Qual é a cidade neste endereço? '{endereco}'"}
@@ -79,8 +91,9 @@ class ClassificadorDenuncias:
     def gerar_resumo(self, denuncia: str) -> str:
         """Gera um resumo de uma frase da denúncia"""
         try:
+            # CORREÇÃO: Modelo alterado para 'gpt-4o-mini'
             response = self.client.chat.completions.create(
-                model="gpt-4.1-mini",
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": "Você é um assistente que cria resumos concisos de denúncias. Responda com UMA ÚNICA FRASE começando com 'Denúncia referente a'. Máximo 15 palavras."},
                     {"role": "user", "content": f"Resuma esta denúncia: {denuncia}"}
@@ -95,8 +108,9 @@ class ClassificadorDenuncias:
     def classificar_denuncia(self, denuncia: str) -> Dict:
         """Classifica a denúncia usando LLM"""
         try:
+            # CORREÇÃO: Modelo alterado para 'gpt-4o-mini'
             response = self.client.chat.completions.create(
-                model="gpt-4.1-mini",
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": """Você é um classificador de denúncias. Analise a denúncia e retorne um JSON com:
                     - tema: Um dos seguintes: Alimentação, Comércio, Educação, Finanças, Habitação, Informações, Lazer, Produtos, Saúde, Serviços, Telecomunicações, Transporte
@@ -111,18 +125,23 @@ class ClassificadorDenuncias:
             )
             
             try:
-                resultado = json.loads(response.choices[0].message.content.strip())
+                # Remove possíveis marcações de código markdown do JSON
+                content = response.choices[0].message.content.strip()
+                if content.startswith("```json"):
+                    content = content.replace("```json", "").replace("```", "").strip()
+                
+                resultado = json.loads(content)
                 return resultado
             except json.JSONDecodeError:
                 return {
                     "tema": "Serviços",
-                    "subtema": "Serviços On-line (E-mails, Aplicativos, Redes Sociais, Hospedagem de Sites, etc.)",
+                    "subtema": "Serviços On-line",
                     "empresa": "Não identificada"
                 }
         except Exception:
             return {
                 "tema": "Serviços",
-                "subtema": "Serviços On-line (E-mails, Aplicativos, Redes Sociais, Hospedagem de Sites, etc.)",
+                "subtema": "Não classificado",
                 "empresa": "Não identificada"
             }
 
