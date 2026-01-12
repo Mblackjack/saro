@@ -8,10 +8,14 @@ import streamlit as st
 import json
 import os
 from datetime import datetime
-from classificador_denuncias import ClassificadorDenuncias
 
-# Configuração da página
+# Configuração da página (deve ser a primeira chamada Streamlit)
 st.set_page_config(page_title="SARO - Sistema de Ouvidorias", layout="wide")
+
+# ============ AJUSTE DE CAMINHOS DINÂMICOS ============
+# Isso resolve o FileNotFoundError no Streamlit Cloud
+base_path = os.path.dirname(os.path.abspath(__file__))
+historico_file = os.path.join(base_path, "historico_denuncias.json")
 
 # CSS customizado
 st.markdown("""
@@ -51,34 +55,30 @@ if "resultado" not in st.session_state:
     st.session_state.resultado = None
 if "historico" not in st.session_state:
     st.session_state.historico = []
-if "num_comunicacao_input" not in st.session_state:
-    st.session_state.num_comunicacao_input = ""
-if "num_mprj_input" not in st.session_state:
-    st.session_state.num_mprj_input = ""
-if "endereco_input" not in st.session_state:
-    st.session_state.endereco_input = ""
-if "denuncia_input" not in st.session_state:
-    st.session_state.denuncia_input = ""
-if "responsavel_input" not in st.session_state:
-    st.session_state.responsavel_input = "Elias"
-if "consumidor_vencedor_input" not in st.session_state:
-    st.session_state.consumidor_vencedor_input = "Não"
 if "visualizando_registro" not in st.session_state:
     st.session_state.visualizando_registro = None
 
-# Carregar histórico do arquivo
-historico_file = "/home/ubuntu/mprj_denuncias/historico_denuncias.json"
+# CARREGAMENTO SEGURO DO HISTÓRICO
 if os.path.exists(historico_file):
-    with open(historico_file, 'r', encoding='utf-8') as f:
-        st.session_state.historico = json.load(f)
+    try:
+        with open(historico_file, 'r', encoding='utf-8') as f:
+            st.session_state.historico = json.load(f)
+    except Exception:
+        st.session_state.historico = []
 
 # Cabeçalho
 st.title("⚖️ SARO - Sistema Automático de Registro de Ouvidorias")
 st.markdown("**Versão 5.1** | Classificação automática de denúncias e encaminhamento para promotorias do MPRJ")
 st.divider()
 
-# Inicializar classificador
-classificador = ClassificadorDenuncias()
+# INICIALIZAÇÃO SEGURA DO CLASSIFICADOR
+try:
+    from classificador_denuncias import ClassificadorDenuncias
+    classificador = ClassificadorDenuncias()
+except Exception as e:
+    st.error("⚠️ Erro ao inicializar o Classificador de IA.")
+    st.info("Verifique se a chave OPENAI_API_KEY está configurada nos 'Secrets' do Streamlit.")
+    st.stop()
 
 # ============ VISUALIZAÇÃO ENXUTA DE REGISTRO (MODAL) ============
 if st.session_state.visualizando_registro is not None:
@@ -89,7 +89,6 @@ if st.session_state.visualizando_registro is not None:
     with st.container():
         st.markdown('<div class="modal-container">', unsafe_allow_html=True)
         
-        # Linha 1: Identificadores
         col1, col2, col3 = st.columns(3)
         with col1:
             st.markdown(f"**Nº Comunicação:** {registro.get('num_comunicacao', 'N/A')}")
@@ -98,23 +97,19 @@ if st.session_state.visualizando_registro is not None:
         with col3:
             st.markdown(f"**Data:** {registro.get('data', 'N/A')}")
             
-        # Linha 2: Responsáveis
         col1, col2 = st.columns(2)
         with col1:
             st.markdown(f"**Responsável pelo Envio:** {registro.get('responsavel', 'N/A')}")
         with col2:
             st.markdown(f"**Consumidor Vencedor:** {registro.get('consumidor_vencedor', 'N/A')}")
             
-        # Linha 3: Localização e Promotoria
         st.markdown(f"**Endereço:** {registro.get('endereco', 'N/A')}")
         st.markdown(f"**Município:** {registro.get('municipio', 'N/A')}")
         st.markdown(f"**Promotoria:** {registro.get('promotoria', 'N/A')}")
         st.markdown(f"📧 **E-mail:** {registro.get('email', 'N/A')} | 📞 **Telefone:** {registro.get('telefone', 'N/A')}")
         
-        # Linha 4: Classificação
         st.markdown(f"**Tema:** {registro.get('tema', 'N/A')} | **Subtema:** {registro.get('subtema', 'N/A')} | **Empresa:** {registro.get('empresa', 'N/A')}")
         
-        # Linha 5: Resumo e Denúncia
         st.markdown("**Resumo:**")
         st.info(registro.get('resumo', 'N/A'))
         
@@ -161,67 +156,56 @@ if submit:
     if not endereco or not denuncia:
         st.error("❌ Por favor, preencha o Endereço e a Descrição da Ouvidoria!")
     else:
-        with st.spinner("Processando ouvidoria..."):
-            resultado = classificador.processar_denuncia(
-                endereco=endereco,
-                denuncia=denuncia,
-                num_comunicacao=num_comunicacao,
-                num_mprj=num_mprj
-            )
-            resultado["responsavel"] = responsavel
-            resultado["consumidor_vencedor"] = consumidor_vencedor
-            resultado["data"] = datetime.now().strftime("%d/%m/%Y %H:%M")
-            
-            st.session_state.resultado = resultado
-            
-            # Salvar no histórico
-            st.session_state.historico.append(resultado)
-            with open(historico_file, 'w', encoding='utf-8') as f:
-                json.dump(st.session_state.historico, f, ensure_ascii=False, indent=2)
-            
-            st.success("✅ Ouvidoria processada e salva com sucesso!")
+        with st.spinner("IA Processando ouvidoria..."):
+            try:
+                resultado = classificador.processar_denuncia(
+                    endereco=endereco,
+                    denuncia=denuncia,
+                    num_comunicacao=num_comunicacao,
+                    num_mprj=num_mprj
+                )
+                resultado["responsavel"] = responsavel
+                resultado["consumidor_vencedor"] = consumidor_vencedor
+                resultado["data"] = datetime.now().strftime("%d/%m/%Y %H:%M")
+                
+                st.session_state.resultado = resultado
+                st.session_state.historico.append(resultado)
+                
+                # SALVAMENTO SEGURO
+                with open(historico_file, 'w', encoding='utf-8') as f:
+                    json.dump(st.session_state.historico, f, ensure_ascii=False, indent=2)
+                
+                st.success("✅ Ouvidoria processada e salva com sucesso!")
+            except Exception as e:
+                st.error(f"Erro ao processar: {e}")
 
 st.divider()
 
 # ============ RESULTADO DA CLASSIFICAÇÃO ============
 if st.session_state.resultado:
-    resultado = st.session_state.resultado
+    res = st.session_state.resultado
     st.markdown("### ✅ Resultado da Classificação")
     
-    # 1. Nº Comunicação e Nº MPRJ
     col1, col2 = st.columns(2)
     with col1:
-        st.info(f"**Nº Comunicação:** {resultado['num_comunicacao']}")
+        st.info(f"**Nº Comunicação:** {res['num_comunicacao']}")
     with col2:
-        st.info(f"**Nº MPRJ:** {resultado['num_mprj']}")
+        st.info(f"**Nº MPRJ:** {res['num_mprj']}")
     
-    # 2. Promotoria Responsável
-    st.info(f"**Promotoria Responsável:** {resultado['promotoria']}")
-    st.markdown(f"📧 **E-mail:** {resultado['email']} | 📞 **Telefone:** {resultado['telefone']}")
+    st.info(f"**Promotoria Responsável:** {res['promotoria']}")
+    st.markdown(f"📧 **E-mail:** {res['email']} | 📞 **Telefone:** {res['telefone']}")
     
-    # 3. Classificação (Tema, Subtema, Empresa)
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.success(f"**Tema:** {resultado['tema']}")
+        st.success(f"**Tema:** {res['tema']}")
     with col2:
-        st.success(f"**Subtema:** {resultado['subtema']}")
+        st.success(f"**Subtema:** {res['subtema']}")
     with col3:
-        st.success(f"**Empresa:** {resultado['empresa']}")
+        st.success(f"**Empresa:** {res['empresa']}")
         
-    # 4. Resumo
     st.markdown("**Resumo da Ouvidoria:**")
-    st.markdown(f'<div class="resumo-box">{resultado["resumo"]}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="resumo-box">{res["resumo"]}</div>', unsafe_allow_html=True)
     
-    # 5. Informações Completas (Dropdown)
-    with st.expander("Ver Informações Completas"):
-        st.write(f"**Responsável:** {resultado['responsavel']}")
-        st.write(f"**Consumidor Vencedor:** {resultado['consumidor_vencedor']}")
-        st.write(f"**Município Identificado:** {resultado['municipio']}")
-        st.write(f"**Endereço:** {resultado['endereco']}")
-        st.write("**Descrição Original:**")
-        st.write(resultado['denuncia'])
-        
-    # 6. Botão Nova Ouvidoria
     if st.button("➕ Nova Ouvidoria", use_container_width=True):
         st.session_state.resultado = None
         st.rerun()
@@ -229,19 +213,17 @@ if st.session_state.resultado:
 st.divider()
 
 # ============ REGISTRO DE OUVIDORIAS (HISTÓRICO) ============
-st.markdown("### 📊 Registro de Ouvidorias")
+st.markdown("### 📊 Registro de Ouvidoria")
 
 if not st.session_state.historico:
     st.info("Nenhuma ouvidoria registrada ainda.")
 else:
-    # Barra de busca e filtros
     col1, col2 = st.columns([3, 1])
     with col1:
         search = st.text_input("🔍 Buscar no histórico", placeholder="Pesquise por número, empresa, município...")
     with col2:
         filtro_tema = st.selectbox("Filtrar por Tema", ["Todos"] + sorted(list(set(h['tema'] for h in st.session_state.historico))))
 
-    # Filtrar dados
     dados_filtrados = st.session_state.historico
     if search:
         search = search.lower()
@@ -254,7 +236,6 @@ else:
     if filtro_tema != "Todos":
         dados_filtrados = [h for h in dados_filtrados if h['tema'] == filtro_tema]
 
-    # Exibir tabela com barra de rolagem
     st.markdown('<div class="tabela-container">', unsafe_allow_html=True)
     
     # Cabeçalho da tabela
@@ -271,7 +252,6 @@ else:
     
     st.divider()
     
-    # Linhas da tabela (invertidas para mostrar as mais recentes primeiro)
     for i, registro in enumerate(reversed(dados_filtrados)):
         idx_original = st.session_state.historico.index(registro)
         cols = st.columns([1.5, 1.5, 1.5, 2, 1.5, 1.5, 1.5, 1, 1])
@@ -296,6 +276,5 @@ else:
             
     st.markdown('</div>', unsafe_allow_html=True)
 
-# Rodapé
 st.divider()
 st.caption("SARO - Sistema Automático de Registro de Ouvidorias | Desenvolvido para o MPRJ")
