@@ -15,8 +15,8 @@ class ClassificadorDenuncias:
 
         genai.configure(api_key=api_key)
         
-        # AJUSTE: Usando o nome direto para evitar conflito de versão v1beta/v1
-        self.model_name = 'gemini-1.5-flash' 
+        # AJUSTE FINAL: Nome absoluto do modelo para compatibilidade total
+        self.model_name = 'models/gemini-1.5-flash' 
         self.model = genai.GenerativeModel(self.model_name)
         
         self.base_path = os.path.dirname(os.path.abspath(__file__))
@@ -70,21 +70,21 @@ class ClassificadorDenuncias:
             }
         )
 
-        # 2. Preparação da Hierarquia de Temas/Subtemas
+        # 2. Preparação da Hierarquia de Temas/Subtemas para forçar a IA
         mapeamento_txt = ""
         for tema, subtemas in self.temas_subtemas.items():
             sub_list = ", ".join(subtemas)
             mapeamento_txt += f"- TEMA: {tema} | SUBTEMAS PERMITIDOS: [{sub_list}]\n"
         
-        # 3. Construção do Prompt
-        prompt = f"""Você é um assistente jurídico especializado em triagem de ouvidorias.
+        # 3. Construção do Prompt com regras rígidas
+        prompt = f"""Você é um assistente jurídico especializado em triagem de ouvidorias do Ministério Público.
 Sua tarefa é classificar a denúncia abaixo seguindo RIGOROSAMENTE as listas fornecidas.
 
 DENÚNCIA: "{denuncia}"
 
 REGRAS CRÍTICAS:
-1. Escolha UM TEMA da lista abaixo.
-2. Escolha UM SUBTEMA que esteja explicitamente listado dentro do TEMA escolhido.
+1. Escolha UM TEMA da lista oficial.
+2. Escolha UM SUBTEMA que esteja explicitamente listado DENTRO do TEMA selecionado. É PROIBIDO cruzar subtemas de temas diferentes.
 3. Se a denúncia citar uma empresa, identifique-a. Caso contrário, use 'Não identificada'.
 4. Escreva um resumo executivo curto (máximo 3 linhas).
 
