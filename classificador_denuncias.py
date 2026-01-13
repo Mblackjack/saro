@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import json
 import os
 import unicodedata
@@ -15,8 +14,8 @@ class ClassificadorDenuncias:
 
         genai.configure(api_key=api_key)
         
-        # AJUSTE DEFINITIVO: Usando o modelo exato da sua lista de permissões
-        self.model_name = 'models/gemini-flash-latest' 
+        # Modelo atualizado conforme sua configuração
+        self.model_name = 'models/gemini-1.5-flash-latest' 
         self.model = genai.GenerativeModel(self.model_name)
         
         self.base_path = os.path.dirname(os.path.abspath(__file__))
@@ -54,21 +53,39 @@ class ClassificadorDenuncias:
             {"promotoria": "Promotoria não identificada", "email": "N/A", "telefone": "N/A", "municipio_oficial": municipio_nome or "Não identificado"}
         )
 
-        temas_txt = ", ".join(self.temas_subtemas.keys())
+        # ====== AJUSTE NO PROMPT: MAPEAMENTO HIERÁRQUICO ======
+        # Criamos uma string que mostra para a IA quais subtemas pertencem a quais temas
+        mapeamento_txt = ""
+        for tema, subtemas in self.temas_subtemas.items():
+            sub_list = ", ".join(subtemas)
+            mapeamento_txt += f"- TEMA: {tema} | SUBTEMAS PERMITIDOS: [{sub_list}]\n"
         
-        prompt = f"""Responda APENAS com um objeto JSON puro.
-        Analise a denúncia: "{denuncia}"
-        Escolha um TEMA desta lista: {temas_txt}
-        
-        JSON esperado:
-        {{"tema": "...", "subtema": "...", "empresa": "...", "resumo": "Denúncia referente a..."}}"""
+        prompt = f"""Você é um especialista em classificação de ouvidorias do Ministério Público.
+Analise a denúncia abaixo e extraia as informações estritamente de acordo com as regras:
+
+DENÚNCIA: "{denuncia}"
+
+REGRAS DE CLASSIFICAÇÃO:
+1. Escolha UM TEMA e UM SUBTEMA da lista oficial abaixo.
+2. O SUBTEMA escolhido DEVE obrigatoriamente pertencer ao TEMA selecionado.
+3. Não invente temas ou subtemas novos.
+
+LISTA OFICIAL (TEMA E SUBTEMAS):
+{mapeamento_txt}
+
+RESPONDA APENAS com um objeto JSON no formato:
+{{
+  "tema": "NOME DO TEMA ESCOLHIDO",
+  "subtema": "NOME DO SUBTEMA ESCOLHIDO",
+  "empresa": "NOME DA EMPRESA CITADA OU 'Não identificada'",
+  "resumo": "Um resumo executivo da denúncia em até 3 linhas"
+}}"""
 
         try:
-            # Chamada ao modelo 2.0 que apareceu na sua lista
             response = self.model.generate_content(prompt)
-            
             res_text = response.text.strip()
-            # Limpeza de Markdown
+            
+            # Limpeza de Markdown do JSON
             if "```json" in res_text:
                 res_text = res_text.split("```json")[1].split("```")[0].strip()
             elif "```" in res_text:
@@ -76,8 +93,8 @@ class ClassificadorDenuncias:
             
             dados_ia = json.loads(res_text)
         except Exception as e:
-            st.error(f"Erro na análise: {e}")
-            dados_ia = {"tema": "Serviços", "subtema": "Erro técnico", "empresa": "Não identificada", "resumo": "Falha no processamento."}
+            st.error(f"Erro na análise da IA: {e}")
+            dados_ia = {"tema": "Não classificado", "subtema": "Não classificado", "empresa": "Não identificada", "resumo": "Erro no processamento."}
 
         return {
             "num_comunicacao": num_comunicacao, "num_mprj": num_mprj,
@@ -86,7 +103,7 @@ class ClassificadorDenuncias:
             "promotoria": prom_info["promotoria"],
             "email": prom_info["email"],
             "telefone": prom_info["telefone"],
-            "tema": dados_ia.get("tema", "Serviços"),
+            "tema": dados_ia.get("tema", "Não identificado"),
             "subtema": dados_ia.get("subtema", "Não identificado"),
             "empresa": dados_ia.get("empresa", "Não identificada"),
             "resumo": dados_ia.get("resumo", "Resumo indisponível")
