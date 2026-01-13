@@ -17,7 +17,7 @@ class ClassificadorDenuncias:
         genai.configure(api_key=api_key)
         
         # Modelo 2.0 Flash (O que funcionou na sua cota)
-       self.model = models/genai.GenerativeModel('gemini-1.5-flash')
+       self.model = models/genai.GenerativeModel('gemini-2.0-flash')
         
         self.base_path = os.path.dirname(os.path.abspath(__file__))
         self.carregar_bases()
