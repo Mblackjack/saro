@@ -3,7 +3,6 @@ import os
 import unicodedata
 import streamlit as st
 import google.generativeai as genai
-from google.generativeai.types import RequestOptions
 from typing import Dict, Optional
 
 class ClassificadorDenuncias:
@@ -14,16 +13,13 @@ class ClassificadorDenuncias:
             st.error("❌ GOOGLE_API_KEY não configurada nos Secrets.")
             st.stop()
 
+        # Configuração global
         genai.configure(api_key=api_key)
         
         # 2. Especificação do modelo
-        # Usamos o nome oficial para a versão v1
-        self.model_name = 'gemini-1.5-flash' 
-        
-        # AJUSTE DE VERSÃO: Forçamos o uso da API v1 para evitar o erro de v1beta
-        self.model = genai.GenerativeModel(
-            model_name=self.model_name
-        )
+        # Usamos o nome completo com 'models/' que é o padrão mais estável
+        self.model_name = 'models/gemini-1.5-flash' 
+        self.model = genai.GenerativeModel(model_name=self.model_name)
         
         self.base_path = os.path.dirname(os.path.abspath(__file__))
         self.carregar_bases()
@@ -48,7 +44,7 @@ class ClassificadorDenuncias:
         return "".join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
     def processar_denuncia(self, endereco: str, denuncia: str, num_comunicacao: str = "", num_mprj: str = "") -> Dict:
-        # Identificação de Promotoria
+        # Identificação de Promotoria por Município
         municipio_nome = None
         end_upper = self.remover_acentos(endereco.upper())
         for m_chave in self.municipio_para_promotoria.keys():
@@ -61,33 +57,39 @@ class ClassificadorDenuncias:
             {"promotoria": "Promotoria não identificada", "email": "N/A", "telefone": "N/A", "municipio_oficial": municipio_nome or "Não identificado"}
         )
 
-        # Mapeamento para o Prompt (Subtemas dentro de Temas)
+        # 3. Mapeamento Hierárquico para o Prompt
+        # Isso força a IA a ver quais subtemas pertencem a quais temas
         mapeamento_txt = ""
         for tema, subtemas in self.temas_subtemas.items():
             sub_list = ", ".join(subtemas)
-            mapeamento_txt += f"- TEMA: {tema} | SUBTEMAS: [{sub_list}]\n"
+            mapeamento_txt += f"TEMA: {tema} -> SUBTEMAS: [{sub_list}]\n"
         
-        prompt = f"""Analise a denúncia: "{denuncia}"
+        prompt = f"""Você é um classificador jurídico. Analise a denúncia e retorne um JSON.
+        
+        DENÚNCIA: "{denuncia}"
         
         REGRAS:
-        1. Escolha um TEMA e um SUBTEMA estritamente da lista abaixo.
-        2. O subtema deve pertencer ao tema escolhido.
-        3. Identifique a empresa citada.
+        1. Escolha o TEMA e o SUBTEMA estritamente da lista abaixo.
+        2. O subtema DEVE pertencer ao tema escolhido.
+        3. Se não houver correspondência exata, use o mais próximo.
         
         LISTA OFICIAL:
         {mapeamento_txt}
         
-        Responda apenas com JSON:
-        {{"tema": "...", "subtema": "...", "empresa": "...", "resumo": "..."}}"""
+        FORMATO DE RESPOSTA (JSON PURO):
+        {{
+          "tema": "...",
+          "subtema": "...",
+          "empresa": "...",
+          "resumo": "..."
+        }}"""
 
         try:
-            # Usamos request_options para garantir que não haja confusão de versão na chamada
-            response = self.model.generate_content(
-                prompt,
-                request_options=RequestOptions(api_version='v1')
-            )
+            # Chamada simplificada - sem RequestOptions problemático
+            response = self.model.generate_content(prompt)
             
             res_text = response.text.strip()
+            # Limpeza de blocos Markdown
             if "```json" in res_text:
                 res_text = res_text.split("```json")[1].split("```")[0].strip()
             elif "```" in res_text:
@@ -96,7 +98,7 @@ class ClassificadorDenuncias:
             dados_ia = json.loads(res_text)
         except Exception as e:
             st.error(f"⚠️ Erro na análise da IA: {e}")
-            dados_ia = {"tema": "Não classificado", "subtema": "Não classificado", "empresa": "Não identificada", "resumo": "Erro técnico."}
+            dados_ia = {"tema": "Não classificado", "subtema": "Não classificado", "empresa": "Não identificada", "resumo": "Erro técnico no processamento."}
 
         return {
             "num_comunicacao": num_comunicacao, "num_mprj": num_mprj,
@@ -104,9 +106,4 @@ class ClassificadorDenuncias:
             "municipio": prom_info["municipio_oficial"],
             "promotoria": prom_info["promotoria"],
             "email": prom_info["email"],
-            "telefone": prom_info["telefone"],
-            "tema": dados_ia.get("tema", "Não identificado"),
-            "subtema": dados_ia.get("subtema", "Não identificado"),
-            "empresa": dados_ia.get("empresa", "Não identificada"),
-            "resumo": dados_ia.get("resumo", "Resumo indisponível")
-        }
+            "telefone":
