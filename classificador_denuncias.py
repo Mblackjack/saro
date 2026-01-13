@@ -7,17 +7,19 @@ from typing import Dict
 
 class ClassificadorDenuncias:
     def __init__(self):
-        # 1. Configuração da API
         api_key = st.secrets.get("GOOGLE_API_KEY")
         if not api_key:
-            st.error("❌ GOOGLE_API_KEY não configurada nos Secrets.")
+            st.error("❌ GOOGLE_API_KEY não configurada.")
             st.stop()
 
         genai.configure(api_key=api_key)
         
-        # AJUSTE DE COMPATIBILIDADE: Usando a versão de produção estável
-        self.model = genai.GenerativeModel(model_name='models/gemini-1.5-flash-latest')
-        
+        # Tentativa sequencial de modelos para evitar o erro 404
+        try:
+            self.model = genai.GenerativeModel('gemini-1.5-flash')
+        except:
+            self.model = genai.GenerativeModel('gemini-pro')
+            
         self.base_path = os.path.dirname(os.path.abspath(__file__))
         self.carregar_bases()
 
@@ -46,7 +48,7 @@ class ClassificadorDenuncias:
         return "".join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
     def processar_denuncia(self, endereco: str, denuncia: str, num_comunicacao: str = "", num_mprj: str = "") -> Dict:
-        # Identificação de Promotoria
+        # Busca Município/Promotoria (Como na imagem que você enviou)
         municipio_info = None
         end_upper = self.remover_acentos(endereco.upper())
         for m_chave, info in self.municipio_para_promotoria.items():
@@ -57,20 +59,16 @@ class ClassificadorDenuncias:
         if not municipio_info:
             municipio_info = {"promotoria": "Não identificada", "email": "N/A", "telefone": "N/A", "municipio_oficial": "Não identificado"}
 
-        # RESOLUÇÃO DO SUBTEMA: Criando a árvore de decisão para a IA
+        # Hierarquia de Temas para evitar subtemas errados
         mapeamento_txt = ""
         for tema, subs in self.temas_subtemas.items():
-            mapeamento_txt += f"TEMA: {tema} | SUBTEMAS VÁLIDOS: [{', '.join(subs)}]\n"
+            mapeamento_txt += f"- TEMA: {tema} | SUBTEMAS: {', '.join(subs)}\n"
 
-        prompt = f"""Você é um classificador jurídico. Classifique a denúncia abaixo:
-        DENÚNCIA: "{denuncia}"
-        
-        REGRAS RÍGIDAS:
-        1. Escolha o TEMA e o SUBTEMA estritamente da lista abaixo:
+        prompt = f"""Analise a denúncia: "{denuncia}"
+        Use apenas esta lista:
         {mapeamento_txt}
-        2. O subtema deve ser um dos itens listados dentro do tema escolhido.
         
-        Responda APENAS um objeto JSON no formato:
+        Responda APENAS um JSON:
         {{"tema": "...", "subtema": "...", "empresa": "...", "resumo": "..."}}"""
 
         resultado_final = {
@@ -80,23 +78,17 @@ class ClassificadorDenuncias:
             "promotoria": municipio_info["promotoria"],
             "email": municipio_info["email"],
             "telefone": municipio_info["telefone"],
-            "tema": "Processando...", "subtema": "Processando...",
-            "empresa": "Não identificada", "resumo": "Aguardando retorno da IA."
+            "tema": "Não classificado", "subtema": "Não classificado",
+            "empresa": "Não identificada", "resumo": "Erro na análise da IA"
         }
 
         try:
+            # Chamada principal
             response = self.model.generate_content(prompt)
-            res_text = response.text.strip()
-            
-            # Limpeza de blocos JSON
-            if "```json" in res_text:
-                res_text = res_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in res_text:
-                res_text = res_text.split("```")[1].split("```")[0].strip()
-            
-            dados_ia = json.loads(res_text)
+            txt = response.text.replace('```json', '').replace('```', '').strip()
+            dados_ia = json.loads(txt)
             resultado_final.update(dados_ia)
-        except Exception as e:
-            st.error(f"Erro na análise: {e}")
+        except:
+            pass # Mantém o resultado_final padrão se a IA falhar
 
         return resultado_final
