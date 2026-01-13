@@ -7,15 +7,16 @@ from typing import Dict, Optional
 
 class ClassificadorDenuncias:
     def __init__(self):
+        # A identação deve ser uniforme (4 espaços)
         api_key = st.secrets.get("GOOGLE_API_KEY")
-    if not api_key:
+        if not api_key:
             st.error("❌ GOOGLE_API_KEY não configurada nos Secrets.")
             st.stop()
 
         genai.configure(api_key=api_key)
         
-        # AJUSTE DEFINITIVO: Usando o modelo exato da sua lista de permissões
-        self.model_name = 'models/gemini-flash-latest' 
+        # Uso do modelo estável para evitar erro 404
+        self.model_name = 'gemini-1.5-flash' 
         self.model = genai.GenerativeModel(self.model_name)
         
         self.base_path = os.path.dirname(os.path.abspath(__file__))
@@ -31,16 +32,23 @@ class ClassificadorDenuncias:
             st.error(f"❌ Erro nas bases JSON: {e}")
             st.stop()
             
-        self.municipio_para_promotoria = {
-            m.upper(): {"promotoria": d["promotoria"], "email": d["email"], "telefone": d["telefone"], "municipio_oficial": m}
-            for nucleo, d in self.base_promotorias.items() for m in d["municipios"]
-        }
+        # Mapeamento corrigido de municípios
+        self.municipio_para_promotoria = {}
+        for nucleo, d in self.base_promotorias.items():
+            for m in d.get("municipios", []):
+                self.municipio_para_promotoria[m.upper()] = {
+                    "promotoria": d["promotoria"],
+                    "email": d["email"],
+                    "telefone": d["telefone"],
+                    "municipio_oficial": m
+                }
 
     def remover_acentos(self, texto: str) -> str:
         if not texto: return ""
         return "".join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
     def processar_denuncia(self, endereco: str, denuncia: str, num_comunicacao: str = "", num_mprj: str = "") -> Dict:
+        # 1. Busca de Município/Promotoria
         municipio_nome = None
         end_upper = self.remover_acentos(endereco.upper())
         for m_chave in self.municipio_para_promotoria.keys():
@@ -50,43 +58,10 @@ class ClassificadorDenuncias:
         
         prom_info = self.municipio_para_promotoria.get(
             municipio_nome.upper() if municipio_nome else "", 
-            {"promotoria": "Promotoria não identificada", "email": "N/A", "telefone": "N/A", "municipio_oficial": municipio_nome or "Não identificado"}
+            {"promotoria": "Não identificada", "email": "N/A", "telefone": "N/A", "municipio_oficial": "Não identificado"}
         )
 
-        temas_txt = ", ".join(self.temas_subtemas.keys())
-        
-        prompt = f"""Responda APENAS com um objeto JSON puro.
-        Analise a denúncia: "{denuncia}"
-        Escolha um TEMA desta lista: {temas_txt}
-        
-        JSON esperado:
-        {{"tema": "...", "subtema": "...", "empresa": "...", "resumo": "Denúncia referente a..."}}"""
-
-        try:
-            # Chamada ao modelo 2.0 que apareceu na sua lista
-            response = self.model.generate_content(prompt)
-            
-            res_text = response.text.strip()
-            # Limpeza de Markdown
-            if "```json" in res_text:
-                res_text = res_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in res_text:
-                res_text = res_text.split("```")[1].split("```")[0].strip()
-            
-            dados_ia = json.loads(res_text)
-        except Exception as e:
-            st.error(f"Erro na análise: {e}")
-            dados_ia = {"tema": "Serviços", "subtema": "Erro técnico", "empresa": "Não identificada", "resumo": "Falha no processamento."}
-
-        return {
-            "num_comunicacao": num_comunicacao, "num_mprj": num_mprj,
-            "endereco": endereco, "denuncia": denuncia,
-            "municipio": prom_info["municipio_oficial"],
-            "promotoria": prom_info["promotoria"],
-            "email": prom_info["email"],
-            "telefone": prom_info["telefone"],
-            "tema": dados_ia.get("tema", "Serviços"),
-            "subtema": dados_ia.get("subtema", "Não identificado"),
-            "empresa": dados_ia.get("empresa", "Não identificada"),
-            "resumo": dados_ia.get("resumo", "Resumo indisponível")
-        }
+        # 2. Preparação do Guia Hierárquico para a IA (Passo a passo solicitado)
+        guia_hierarquico = ""
+        for tema, subtemas in self.temas_subtemas.items():
+            guia_
