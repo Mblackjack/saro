@@ -8,22 +8,20 @@ from typing import Dict, Optional
 
 class ClassificadorDenuncias:
     def __init__(self):
-        # 1. Recupera a chave do Google nos Secrets
         api_key = st.secrets.get("GOOGLE_API_KEY")
-        
         if not api_key:
-            st.error("❌ ERRO: GOOGLE_API_KEY não encontrada nos Secrets do Streamlit.")
+            st.error("❌ GOOGLE_API_KEY não configurada nos Secrets.")
             st.stop()
 
-        # Configura o Gemini
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        # AJUSTE AQUI: Usando o nome completo do modelo para evitar o erro 404
+        self.model = genai.GenerativeModel('gemini-1.5-flash-latest')
         
         self.base_path = os.path.dirname(os.path.abspath(__file__))
         self.carregar_bases()
 
     def carregar_bases(self):
-        """Carrega as bases de dados locais"""
         try:
             with open(os.path.join(self.base_path, "base_temas_subtemas.json"), 'r', encoding='utf-8') as f:
                 self.temas_subtemas = json.load(f)
@@ -33,20 +31,17 @@ class ClassificadorDenuncias:
             st.error(f"❌ Erro ao ler bases JSON: {e}")
             st.stop()
             
-        self.municipio_para_promotoria = {}
-        for nucleo, dados in self.base_promotorias.items():
-            for municipio in dados["municipios"]:
-                self.municipio_para_promotoria[municipio.upper()] = {
-                    "promotoria": dados["promotoria"], "email": dados["email"],
-                    "telefone": dados["telefone"], "municipio_oficial": municipio
-                }
+        self.municipio_para_promotoria = {
+            m.upper(): {"promotoria": d["promotoria"], "email": d["email"], "telefone": d["telefone"], "municipio_oficial": m}
+            for nucleo, d in self.base_promotorias.items() for m in d["municipios"]
+        }
 
     def remover_acentos(self, texto: str) -> str:
         if not texto: return ""
         return "".join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
     def processar_denuncia(self, endereco: str, denuncia: str, num_comunicacao: str = "", num_mprj: str = "") -> Dict:
-        # Identificação de Município (Lógica local)
+        # Lógica de Município (Local)
         municipio_nome = None
         end_upper = self.remover_acentos(endereco.upper())
         for m_chave in self.municipio_para_promotoria.keys():
@@ -59,31 +54,44 @@ class ClassificadorDenuncias:
             {"promotoria": "Promotoria não identificada", "email": "N/A", "telefone": "N/A", "municipio_oficial": municipio_nome or "Não identificado"}
         )
 
-        # Preparação dos Temas
         temas_validos = ", ".join(self.temas_subtemas.keys())
         
-        prompt = f"""Analise esta denúncia do consumidor e extraia os dados estritamente em formato JSON.
+        # PROMPT OTIMIZADO PARA GEMINI
+        prompt = f"""Atue como um analista de dados. Analise a denúncia e retorne APENAS um JSON.
         LISTA DE TEMAS: {temas_validos}
         
         DENÚNCIA: "{denuncia}"
         
-        Responda apenas com o JSON contendo:
+        JSON esperado:
         {{
           "tema": "Escolha um da lista",
-          "subtema": "Resumo do problema em 3 palavras",
-          "empresa": "Nome da empresa reclamada",
-          "resumo": "Frase curta começando com 'Denúncia referente a'"
+          "subtema": "3 palavras sobre o problema",
+          "empresa": "Nome da empresa",
+          "resumo": "Denúncia referente a..."
         }}"""
 
         try:
-            # Chamada ao Gemini
-            response = self.model.generate_content(prompt)
-            # Limpa a resposta para garantir que seja um JSON puro
-            texto_resposta = response.text.replace('```json', '').replace('```', '').strip()
-            dados_ia = json.loads(texto_resposta)
+            # Configuração para evitar que o filtro de segurança bloqueie palavras comuns em denúncias
+            safety_settings = [
+                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+            ]
+
+            response = self.model.generate_content(prompt, safety_settings=safety_settings)
+            
+            # Limpeza de markdown da resposta do Gemini
+            res_text = response.text.strip()
+            if "```json" in res_text:
+                res_text = res_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in res_text:
+                res_text = res_text.split("```")[1].split("```")[0].strip()
+                
+            dados_ia = json.loads(res_text)
         except Exception as e:
-            st.warning(f"Aviso: IA em modo de segurança. Detalhe: {e}")
-            dados_ia = {"tema": "Serviços", "subtema": "Análise Pendente", "empresa": "Não identificada", "resumo": "Processamento local."}
+            st.error(f"Erro detalhado na IA: {e}")
+            dados_ia = {"tema": "Serviços", "subtema": "Erro no Gemini", "empresa": "Não identificada", "resumo": "Erro técnico ao processar."}
 
         return {
             "num_comunicacao": num_comunicacao, "num_mprj": num_mprj,
