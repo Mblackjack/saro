@@ -7,6 +7,7 @@ from typing import Dict, Optional
 
 class ClassificadorDenuncias:
     def __init__(self):
+        # Busca a chave nos Secrets do Streamlit
         api_key = st.secrets.get("GOOGLE_API_KEY")
         if not api_key:
             st.error("❌ GOOGLE_API_KEY não configurada nos Secrets.")
@@ -14,33 +15,44 @@ class ClassificadorDenuncias:
 
         genai.configure(api_key=api_key)
         
-        # Modelo atualizado conforme sua configuração
-        self.model_name = 'models/gemini-1.5-flash-latest' 
+        # Nome do modelo estável para evitar erro 404
+        self.model_name = 'gemini-1.5-flash' 
         self.model = genai.GenerativeModel(self.model_name)
         
         self.base_path = os.path.dirname(os.path.abspath(__file__))
         self.carregar_bases()
 
     def carregar_bases(self):
+        """Carrega os arquivos JSON de suporte."""
         try:
             with open(os.path.join(self.base_path, "base_temas_subtemas.json"), 'r', encoding='utf-8') as f:
                 self.temas_subtemas = json.load(f)
             with open(os.path.join(self.base_path, "base_promotorias.json"), 'r', encoding='utf-8') as f:
                 self.base_promotorias = json.load(f)
         except Exception as e:
-            st.error(f"❌ Erro nas bases JSON: {e}")
+            st.error(f"❌ Erro ao carregar as bases JSON: {e}")
             st.stop()
             
+        # Mapeia municípios para promotorias (para busca rápida)
         self.municipio_para_promotoria = {
-            m.upper(): {"promotoria": d["promotoria"], "email": d["email"], "telefone": d["telefone"], "municipio_oficial": m}
+            m.upper(): {
+                "promotoria": d["promotoria"], 
+                "email": d["email"], 
+                "telefone": d["telefone"], 
+                "municipio_oficial": m
+            }
             for nucleo, d in self.base_promotorias.items() for m in d["municipios"]
         }
 
     def remover_acentos(self, texto: str) -> str:
+        """Remove acentuação para facilitar a busca por município."""
         if not texto: return ""
         return "".join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
     def processar_denuncia(self, endereco: str, denuncia: str, num_comunicacao: str = "", num_mprj: str = "") -> Dict:
+        """Processa a denúncia usando IA e identifica a promotoria local."""
+        
+        # 1. Identificação do Município por texto (Baseado no Endereço)
         municipio_nome = None
         end_upper = self.remover_acentos(endereco.upper())
         for m_chave in self.municipio_para_promotoria.keys():
@@ -50,42 +62,50 @@ class ClassificadorDenuncias:
         
         prom_info = self.municipio_para_promotoria.get(
             municipio_nome.upper() if municipio_nome else "", 
-            {"promotoria": "Promotoria não identificada", "email": "N/A", "telefone": "N/A", "municipio_oficial": municipio_nome or "Não identificado"}
+            {
+                "promotoria": "Promotoria não identificada", 
+                "email": "N/A", 
+                "telefone": "N/A", 
+                "municipio_oficial": municipio_nome or "Não identificado"
+            }
         )
 
-        # ====== AJUSTE NO PROMPT: MAPEAMENTO HIERÁRQUICO ======
-        # Criamos uma string que mostra para a IA quais subtemas pertencem a quais temas
+        # 2. Preparação da Hierarquia de Temas/Subtemas para o Prompt
+        # Isso garante que a IA saiba quais subtemas pertencem a quais temas
         mapeamento_txt = ""
         for tema, subtemas in self.temas_subtemas.items():
             sub_list = ", ".join(subtemas)
             mapeamento_txt += f"- TEMA: {tema} | SUBTEMAS PERMITIDOS: [{sub_list}]\n"
         
-        prompt = f"""Você é um especialista em classificação de ouvidorias do Ministério Público.
-Analise a denúncia abaixo e extraia as informações estritamente de acordo com as regras:
+        # 3. Construção do Prompt para o Gemini
+        prompt = f"""Você é um assistente jurídico especializado em triagem de ouvidorias.
+Sua tarefa é classificar a denúncia abaixo seguindo RIGOROSAMENTE as listas fornecidas.
 
 DENÚNCIA: "{denuncia}"
 
-REGRAS DE CLASSIFICAÇÃO:
-1. Escolha UM TEMA e UM SUBTEMA da lista oficial abaixo.
-2. O SUBTEMA escolhido DEVE obrigatoriamente pertencer ao TEMA selecionado.
-3. Não invente temas ou subtemas novos.
+REGRAS CRÍTICAS:
+1. Escolha UM TEMA da lista abaixo.
+2. Escolha UM SUBTEMA que esteja explicitamente listado dentro do TEMA escolhido.
+3. Se a denúncia citar uma empresa, identifique-a. Caso contrário, use 'Não identificada'.
+4. Escreva um resumo executivo curto (máximo 3 linhas).
 
-LISTA OFICIAL (TEMA E SUBTEMAS):
+LISTA DE TEMAS E SUBTEMAS PERMITIDOS:
 {mapeamento_txt}
 
-RESPONDA APENAS com um objeto JSON no formato:
+RESPONDA APENAS com um objeto JSON puro (sem comentários ou markdown):
 {{
-  "tema": "NOME DO TEMA ESCOLHIDO",
-  "subtema": "NOME DO SUBTEMA ESCOLHIDO",
-  "empresa": "NOME DA EMPRESA CITADA OU 'Não identificada'",
-  "resumo": "Um resumo executivo da denúncia em até 3 linhas"
+  "tema": "NOME DO TEMA",
+  "subtema": "NOME DO SUBTEMA",
+  "empresa": "NOME DA EMPRESA",
+  "resumo": "RESUMO DA DENÚNCIA"
 }}"""
 
         try:
+            # Chamada ao Gemini
             response = self.model.generate_content(prompt)
             res_text = response.text.strip()
             
-            # Limpeza de Markdown do JSON
+            # Limpeza de possíveis blocos de código Markdown
             if "```json" in res_text:
                 res_text = res_text.split("```json")[1].split("```")[0].strip()
             elif "```" in res_text:
@@ -93,12 +113,20 @@ RESPONDA APENAS com um objeto JSON no formato:
             
             dados_ia = json.loads(res_text)
         except Exception as e:
-            st.error(f"Erro na análise da IA: {e}")
-            dados_ia = {"tema": "Não classificado", "subtema": "Não classificado", "empresa": "Não identificada", "resumo": "Erro no processamento."}
+            st.error(f"⚠️ Erro na análise da IA: {e}")
+            dados_ia = {
+                "tema": "Não identificado", 
+                "subtema": "Não identificado", 
+                "empresa": "Não identificada", 
+                "resumo": "Falha ao processar a descrição da denúncia."
+            }
 
+        # 4. Retorno do Dicionário Consolidado
         return {
-            "num_comunicacao": num_comunicacao, "num_mprj": num_mprj,
-            "endereco": endereco, "denuncia": denuncia,
+            "num_comunicacao": num_comunicacao,
+            "num_mprj": num_mprj,
+            "endereco": endereco,
+            "denuncia": denuncia,
             "municipio": prom_info["municipio_oficial"],
             "promotoria": prom_info["promotoria"],
             "email": prom_info["email"],
