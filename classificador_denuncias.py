@@ -7,7 +7,7 @@ from typing import Dict
 
 class ClassificadorDenuncias:
     def __init__(self):
-        # 1. Configuração da API através dos Secrets do Streamlit
+        # 1. Configuração da API via Secrets
         api_key = st.secrets.get("GOOGLE_API_KEY")
         if not api_key:
             st.error("❌ GOOGLE_API_KEY não configurada nos Secrets.")
@@ -15,8 +15,8 @@ class ClassificadorDenuncias:
 
         genai.configure(api_key=api_key)
         
-        # 2. Inicialização do modelo (Gemini 1.5 Flash)
-        # Nota: O erro 404 v1beta costuma ser resolvido usando o nome simples do modelo
+        # 2. Inicialização do Modelo (Gemini 1.5 Flash)
+        # O uso do nome direto ajuda a evitar o redirecionamento para v1beta
         try:
             self.model = genai.GenerativeModel('gemini-1.5-flash')
         except Exception as e:
@@ -27,7 +27,7 @@ class ClassificadorDenuncias:
         self.carregar_bases()
 
     def carregar_bases(self):
-        """Carrega as bases de dados JSON necessárias."""
+        """Carrega os arquivos JSON de temas e promotorias."""
         try:
             with open(os.path.join(self.base_path, "base_temas_subtemas.json"), 'r', encoding='utf-8') as f:
                 self.temas_subtemas = json.load(f)
@@ -37,7 +37,7 @@ class ClassificadorDenuncias:
             st.error(f"❌ Erro ao carregar ficheiros JSON: {e}")
             st.stop()
             
-        # Cria mapeamento de municípios para promotorias
+        # Mapeia municípios para promotorias
         self.municipio_para_promotoria = {}
         for d in self.base_promotorias.values():
             for m in d.get("municipios", []):
@@ -54,7 +54,7 @@ class ClassificadorDenuncias:
         return "".join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
     def processar_denuncia(self, endereco: str, denuncia: str, num_comunicacao: str = "", num_mprj: str = "") -> Dict:
-        """Processa a denúncia, identifica o município e classifica via IA."""
+        """Processa a denúncia e classifica via IA."""
         
         # Identificação da Promotoria baseada no endereço
         municipio_info = None
@@ -72,29 +72,29 @@ class ClassificadorDenuncias:
                 "municipio_oficial": "Não identificado"
             }
 
-        # Construção da lista de Temas e Subtemas para orientar a IA
+        # RESOLUÇÃO DO SUBTEMA: Guia hierárquico para a IA
         mapeamento_txt = ""
         for tema, subs in self.temas_subtemas.items():
             mapeamento_txt += f"- TEMA: {tema} | SUBTEMAS: {', '.join(subs)}\n"
 
         prompt = f"""Analise a denúncia: "{denuncia}"
         
-        REGRAS DE CLASSIFICAÇÃO:
-        1. Escolha o TEMA e o SUBTEMA estritamente da lista oficial abaixo.
-        2. O subtema deve obrigatoriamente pertencer ao tema escolhido.
+        REGRAS:
+        1. Escolha o TEMA e o SUBTEMA estritamente da lista abaixo.
+        2. O subtema DEVE pertencer ao tema escolhido.
         
         LISTA OFICIAL:
         {mapeamento_txt}
         
-        Responda APENAS com um objeto JSON puro:
+        Responda APENAS um JSON puro:
         {{
-          "tema": "NOME DO TEMA",
-          "subtema": "NOME DO SUBTEMA",
-          "empresa": "NOME DA EMPRESA OU NÃO IDENTIFICADA",
-          "resumo": "RESUMO EXECUTIVO CURTO"
+          "tema": "...",
+          "subtema": "...",
+          "empresa": "...",
+          "resumo": "..."
         }}"""
 
-        # Objeto padrão caso ocorra erro (evita que a interface apresente 'A definir')
+        # Valor padrão para evitar erro de NoneType
         resultado = {
             "num_comunicacao": num_comunicacao,
             "num_mprj": num_mprj,
@@ -107,15 +107,14 @@ class ClassificadorDenuncias:
             "tema": "Não classificado",
             "subtema": "Não classificado",
             "empresa": "Não identificada",
-            "resumo": "A análise da IA falhou devido a um erro técnico (404 API)."
+            "resumo": "A IA falhou devido a um erro de conexão (404 API)."
         }
 
         try:
-            # Chamada à IA
             response = self.model.generate_content(prompt)
             res_text = response.text.strip()
             
-            # Limpeza de blocos de código markdown se existirem
+            # Limpeza de blocos Markdown
             if "```json" in res_text:
                 res_text = res_text.split("```json")[1].split("```")[0].strip()
             elif "```" in res_text:
