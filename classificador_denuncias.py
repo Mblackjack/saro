@@ -1,21 +1,24 @@
+MODELO QUE DÁ CERTO
+
 import json
 import os
 import unicodedata
 import streamlit as st
 import google.generativeai as genai
-from typing import Dict
+from typing import Dict, Optional
 
 class ClassificadorDenuncias:
     def __init__(self):
-        # 1. Configuração de API (Evita erro 404 de versão)
         api_key = st.secrets.get("GOOGLE_API_KEY")
         if not api_key:
-            st.error("❌ Erro: Chave de API não configurada.")
+            st.error("❌ GOOGLE_API_KEY não configurada nos Secrets.")
             st.stop()
 
         genai.configure(api_key=api_key)
-        # Usamos o modelo Flash por ser mais rápido na extração de dados
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        # AJUSTE DEFINITIVO: Usando o modelo exato da sua lista de permissões
+        self.model_name = 'models/gemini-flash-latest' 
+        self.model = genai.GenerativeModel(self.model_name)
         
         self.base_path = os.path.dirname(os.path.abspath(__file__))
         self.carregar_bases()
@@ -27,88 +30,65 @@ class ClassificadorDenuncias:
             with open(os.path.join(self.base_path, "base_promotorias.json"), 'r', encoding='utf-8') as f:
                 self.base_promotorias = json.load(f)
         except Exception as e:
-            st.error(f"❌ Erro ao carregar bases JSON: {e}")
+            st.error(f"❌ Erro nas bases JSON: {e}")
             st.stop()
             
-        self.municipio_para_promotoria = {}
-        for d in self.base_promotorias.values():
-            for m in d.get("municipios", []):
-                self.municipio_para_promotoria[self.remover_acentos(m.upper())] = {
-                    "promotoria": d["promotoria"],
-                    "email": d["email"],
-                    "telefone": d["telefone"],
-                    "municipio_oficial": m
-                }
+        self.municipio_para_promotoria = {
+            m.upper(): {"promotoria": d["promotoria"], "email": d["email"], "telefone": d["telefone"], "municipio_oficial": m}
+            for nucleo, d in self.base_promotorias.items() for m in d["municipios"]
+        }
 
     def remover_acentos(self, texto: str) -> str:
         if not texto: return ""
         return "".join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
     def processar_denuncia(self, endereco: str, denuncia: str, num_comunicacao: str = "", num_mprj: str = "") -> Dict:
-        # Identificação Geográfica (Promotoria)
-        municipio_info = None
-        end_limpo = self.remover_acentos(endereco.upper())
-        for m_chave, info in self.municipio_para_promotoria.items():
-            if m_chave in end_limpo:
-                municipio_info = info
+        municipio_nome = None
+        end_upper = self.remover_acentos(endereco.upper())
+        for m_chave in self.municipio_para_promotoria.keys():
+            if self.remover_acentos(m_chave) in end_upper:
+                municipio_nome = self.municipio_para_promotoria[m_chave]["municipio_oficial"]
                 break
         
-        if not municipio_info:
-            municipio_info = {"promotoria": "Não identificada", "email": "N/A", "telefone": "N/A", "municipio_oficial": "Não identificado"}
+        prom_info = self.municipio_para_promotoria.get(
+            municipio_nome.upper() if municipio_nome else "", 
+            {"promotoria": "Promotoria não identificada", "email": "N/A", "telefone": "N/A", "municipio_oficial": municipio_nome or "Não identificado"}
+        )
 
-        # Preparação do dicionário de regras para a IA (Extração por similaridade)
-        regras_hierarquicas = ""
-        for tema, subtemas in self.temas_subtemas.items():
-            regras_hierarquicas += f"TEMA: {tema} | SUBTEMAS POSSÍVEIS: {subtemas}\n"
-
-        # PROMPT COM O PASSO A PASSO SOLICITADO
-        prompt = f"""Você é um analista de triagem do Ministério Público. Siga rigorosamente este processo:
-
-        1. ANÁLISE: Leia a denúncia abaixo.
-        2. EXTRAÇÃO: Identifique palavras-chave e caracteres que indiquem o assunto.
-        3. ENQUADRAMENTO DE TEMA: Escolha o tema mais similar da lista fornecida.
-        4. ENQUADRAMENTO DE SUBTEMA: Escolha obrigatoriamente um subtema que esteja DENTRO do array do tema escolhido.
-
-        LISTA OFICIAL DE TEMAS E ARRAYS DE SUBTEMAS:
-        {regras_hierarquicas}
-
-        DENÚNCIA: "{denuncia}"
-
-        RESPOSTA: Retorne APENAS um JSON com os campos: 
-        {{"tema": "...", "subtema": "...", "empresa": "...", "resumo": "..."}}
-        """
-
-        resultado = {
-            "num_comunicacao": num_comunicacao, "num_mprj": num_mprj,
-            "endereco": endereco, "denuncia": denuncia,
-            "municipio": municipio_info["municipio_oficial"],
-            "promotoria": municipio_info["promotoria"],
-            "email": municipio_info["email"],
-            "telefone": municipio_info["telefone"],
-            "tema": "A definir", "subtema": "A definir",
-            "empresa": "Não identificada", "resumo": "Processando..."
-        }
+        temas_txt = ", ".join(self.temas_subtemas.keys())
+        
+        prompt = f"""Responda APENAS com um objeto JSON puro.
+        Analise a denúncia: "{denuncia}"
+        Escolha um TEMA desta lista: {temas_txt}
+        
+        JSON esperado:
+        {{"tema": "...", "subtema": "...", "empresa": "...", "resumo": "Denúncia referente a..."}}"""
 
         try:
+            # Chamada ao modelo 2.0 que apareceu na sua lista
             response = self.model.generate_content(prompt)
-            # Limpeza de caracteres markdown do JSON
-            raw_json = response.text.replace('```json', '').replace('```', '').strip()
-            dados_ia = json.loads(raw_json)
             
-            # Validação: Garante que o subtema pertence ao array do tema no JSON
-            tema_ia = dados_ia.get("tema")
-            subtema_ia = dados_ia.get("subtema")
+            res_text = response.text.strip()
+            # Limpeza de Markdown
+            if "```json" in res_text:
+                res_text = res_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in res_text:
+                res_text = res_text.split("```")[1].split("```")[0].strip()
             
-            if tema_ia in self.temas_subtemas and subtema_ia in self.temas_subtemas[tema_ia]:
-                resultado.update(dados_ia)
-            else:
-                # Se a IA errou o subtema, tentamos forçar o primeiro do array ou manter erro
-                resultado["tema"] = tema_ia if tema_ia in self.temas_subtemas else "Outros"
-                resultado["subtema"] = subtema_ia # Mantém o que ela enviou para você ver o erro, ou poderia forçar 'Não classificado'
-                resultado["empresa"] = dados_ia.get("empresa", "Não identificada")
-                resultado["resumo"] = dados_ia.get("resumo", "")
-                
+            dados_ia = json.loads(res_text)
         except Exception as e:
-            st.error(f"Erro no processamento: {e}")
+            st.error(f"Erro na análise: {e}")
+            dados_ia = {"tema": "Serviços", "subtema": "Erro técnico", "empresa": "Não identificada", "resumo": "Falha no processamento."}
 
-        return resultado
+        return {
+            "num_comunicacao": num_comunicacao, "num_mprj": num_mprj,
+            "endereco": endereco, "denuncia": denuncia,
+            "municipio": prom_info["municipio_oficial"],
+            "promotoria": prom_info["promotoria"],
+            "email": prom_info["email"],
+            "telefone": prom_info["telefone"],
+            "tema": dados_ia.get("tema", "Serviços"),
+            "subtema": dados_ia.get("subtema", "Não identificado"),
+            "empresa": dados_ia.get("empresa", "Não identificada"),
+            "resumo": dados_ia.get("resumo", "Resumo indisponível")
+        }
