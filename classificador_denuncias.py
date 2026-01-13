@@ -14,10 +14,13 @@ class ClassificadorDenuncias:
             st.error("❌ GOOGLE_API_KEY não configurada nos Secrets.")
             st.stop()
 
+        # Configuração base
         genai.configure(api_key=api_key)
         
-        # MUDANÇA: Usando o modelo 'gemini-pro', que tem maior compatibilidade
-        self.model = genai.GenerativeModel('gemini-pro')
+        # Tentativa de usar o modelo mais compatível disponível no momento
+        # Se gemini-pro falhar, o erro será capturado no processamento
+        self.model_name = 'gemini-1.5-flash' 
+        self.model = genai.GenerativeModel(self.model_name)
         
         self.base_path = os.path.dirname(os.path.abspath(__file__))
         self.carregar_bases()
@@ -42,7 +45,7 @@ class ClassificadorDenuncias:
         return "".join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
     def processar_denuncia(self, endereco: str, denuncia: str, num_comunicacao: str = "", num_mprj: str = "") -> Dict:
-        # Identificação Local de Município
+        # Identificação Local (Município) - Sempre funciona
         municipio_nome = None
         end_upper = self.remover_acentos(endereco.upper())
         for m_chave in self.municipio_para_promotoria.keys():
@@ -57,19 +60,20 @@ class ClassificadorDenuncias:
 
         temas_txt = ", ".join(self.temas_subtemas.keys())
         
-        # Prompt simplificado para evitar erros de parser
-        prompt = (
-            f"Analise a denúncia: '{denuncia}'. "
-            f"Escolha um tema desta lista: {temas_txt}. "
-            "Retorne APENAS um objeto JSON com as chaves: tema, subtema, empresa, resumo."
-        )
+        prompt = f"""Responda APENAS com um objeto JSON puro.
+        Analise a denúncia: "{denuncia}"
+        Escolha um TEMA desta lista: {temas_txt}
+        
+        JSON esperado:
+        {{"tema": "...", "subtema": "...", "empresa": "...", "resumo": "Denúncia referente a..."}}"""
 
         try:
-            # Chamada direta
+            # Forçamos a geração de conteúdo
             response = self.model.generate_content(prompt)
             
-            # Limpeza de resposta para pegar apenas o JSON
+            # Tratamento da resposta
             res_text = response.text.strip()
+            # Remove blocos de código markdown se existirem
             if "```json" in res_text:
                 res_text = res_text.split("```json")[1].split("```")[0].strip()
             elif "```" in res_text:
@@ -77,18 +81,26 @@ class ClassificadorDenuncias:
             
             dados_ia = json.loads(res_text)
         except Exception as e:
-            st.warning(f"IA indisponível. Motivo: {e}")
-            dados_ia = {"tema": "Serviços", "subtema": "Análise pendente", "empresa": "Não identificada", "resumo": "Processado localmente."}
+            # Log do erro para depuração mas sem travar a interface
+            st.warning(f"Aviso: IA em ajuste técnico. Detalhe: {e}")
+            dados_ia = {
+                "tema": "Serviços", 
+                "subtema": "Análise pendente", 
+                "empresa": "Não identificada", 
+                "resumo": "Processamento local temporário."
+            }
 
         return {
-            "num_comunicacao": num_comunicacao, "num_mprj": num_mprj,
-            "endereco": endereco, "denuncia": denuncia,
+            "num_comunicacao": num_comunicacao,
+            "num_mprj": num_mprj,
+            "endereco": endereco,
+            "denuncia": denuncia,
             "municipio": prom_info["municipio_oficial"],
             "promotoria": prom_info["promotoria"],
             "email": prom_info["email"],
             "telefone": prom_info["telefone"],
             "tema": dados_ia.get("tema", "Serviços"),
-            "subtema": dados_ia.get("subtema", "Análise pendente"),
+            "subtema": dados_ia.get("subtema", "Não identificado"),
             "empresa": dados_ia.get("empresa", "Não identificada"),
             "resumo": dados_ia.get("resumo", "Resumo indisponível")
         }
