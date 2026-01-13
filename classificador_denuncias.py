@@ -16,7 +16,7 @@ class ClassificadorDenuncias:
         genai.configure(api_key=api_key)
         
         # AJUSTE DEFINITIVO: Usando o modelo exato da sua lista de permissões
-        self.model_name = 'models/gemini-2.0-flash' 
+        self.model_name = 'models/gemini-flash-latest'
         self.model = genai.GenerativeModel(self.model_name)
         
         self.base_path = os.path.dirname(os.path.abspath(__file__))
