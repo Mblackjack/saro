@@ -1,109 +1,245 @@
 # -*- coding: utf-8 -*-
+"""
+Classificador de Denúncias do Consumidor - SARO v5.6
+Restrição rigorosa ao catálogo oficial com redundância de modelos.
+"""
+
 import json
 import os
+import re
 import unicodedata
+from typing import Dict, List, Optional
 import streamlit as st
-import google.generativeai as genai
-from typing import Dict
+
+# Importar OpenAI com tratamento de erro
+try:
+    from openai import OpenAI
+except ImportError:
+    st.error("❌ Erro: Biblioteca OpenAI não instalada. Por favor, aguarde o redeploy automático.")
+    st.stop()
 
 class ClassificadorDenuncias:
     def __init__(self):
-        # Configuração da API via Secrets
-        api_key = st.secrets.get("GOOGLE_API_KEY")
+        # Obter chave da API de forma robusta
+        api_key = self._obter_api_key()
+        
         if not api_key:
-            st.error("❌ GOOGLE_API_KEY não configurada.")
+            st.error(
+                "❌ **Chave da OpenAI não configurada!**\n\n"
+                "Para usar o SARO, siga estes passos:\n\n"
+                "1️⃣ Acesse o painel do seu app no Streamlit Cloud\n"
+                "2️⃣ Clique em **'Manage app'** (canto inferior direito)\n"
+                "3️⃣ Vá em **Settings > Secrets**\n"
+                "4️⃣ Cole exatamente isto:\n"
+                "```\n"
+                "OPENAI_API_KEY = \"sua-chave-aqui\"\n"
+                "```\n"
+                "5️⃣ Clique em **Save**\n\n"
+                "**Gerar chave:** https://platform.openai.com/api-keys"
+            )
             st.stop()
-
+        
         try:
-            genai.configure(api_key=api_key)
-            # Versão estável para evitar Erro 404
-            self.model = genai.GenerativeModel('gemini-1.5-flash')
+            self.client = OpenAI(api_key=api_key)
         except Exception as e:
-            st.error(f"❌ Erro na conexão Gemini: {e}")
+            st.error(f"❌ Erro ao conectar com OpenAI: {str(e)}")
             st.stop()
+        
+        # Lista de modelos em ordem de preferência
+        self.modelos_disponiveis = [
+            "gpt-4.1-mini",
+            "gpt-4.1-nano",
+            "gemini-2.5-flash"
+        ]
         
         self.base_path = os.path.dirname(os.path.abspath(__file__))
         self.carregar_bases()
 
-    def carregar_bases(self):
-        """Carrega bases e cria o mapa Tema-Subtema rigoroso"""
+    def _obter_api_key(self) -> Optional[str]:
+        """Tenta obter a chave de API de múltiplas fontes"""
+        # 1. Tentar Secrets do Streamlit (Recomendado para Cloud)
         try:
-            with open(os.path.join(self.base_path, "base_temas_subtemas.json"), 'r', encoding='utf-8') as f:
-                self.temas_subtemas = json.load(f)
+            if "OPENAI_API_KEY" in st.secrets:
+                return st.secrets["OPENAI_API_KEY"]
+        except:
+            pass
             
-            with open(os.path.join(self.base_path, "base_promotorias.json"), 'r', encoding='utf-8') as f:
-                self.base_promotorias = json.load(f)
-                
-            # Mapeamento Reverso: Acaba com a alucinação (Subtema -> Tema)
-            self.subtema_para_tema = {}
-            for tema, subtemas in self.temas_subtemas.items():
-                for sub in subtemas:
-                    self.subtema_para_tema[sub] = tema
+        # 2. Tentar Variável de Ambiente
+        api_key = os.getenv("OPENAI_API_KEY")
+        if api_key:
+            return api_key
+            
+        return None
 
-            # Mapeamento de Municípios
-            self.municipio_para_promotoria = {}
-            for nucleo, dados in self.base_promotorias.items():
-                for municipio in dados.get("municipios", []):
-                    self.municipio_para_promotoria[self.remover_acentos(municipio.upper())] = {
-                        "promotoria": dados["promotoria"],
-                        "email": dados["email"],
-                        "telefone": dados["telefone"],
-                        "municipio_oficial": municipio
-                    }
-        except Exception as e:
-            st.error(f"❌ Erro crítico nos ficheiros JSON: {e}")
-            st.stop()
+    def carregar_bases(self):
+        """Carrega as bases de dados de temas, subtemas e promotorias"""
+        with open(f"{self.base_path}/base_temas_subtemas.json", 'r', encoding='utf-8') as f:
+            self.temas_subtemas = json.load(f)
+        
+        with open(f"{self.base_path}/base_promotorias.json", 'r', encoding='utf-8') as f:
+            self.base_promotorias = json.load(f)
+            
+        # Criar mapeamento direto de município para dados da promotoria
+        self.municipio_para_promotoria = {}
+        for nucleo, dados in self.base_promotorias.items():
+            for municipio in dados["municipios"]:
+                self.municipio_para_promotoria[municipio.upper()] = {
+                    "promotoria": dados["promotoria"],
+                    "email": dados["email"],
+                    "telefone": dados["telefone"],
+                    "municipio_oficial": municipio
+                }
 
     def remover_acentos(self, texto: str) -> str:
+        """Remove acentos de uma string"""
         if not texto: return ""
         return "".join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
-    def processar_denuncia(self, endereco: str, denuncia: str, num_comunicacao: str = "", num_mprj: str = "") -> Dict:
-        # 1. Busca Geográfica (Município/Promotoria)
-        municipio_info = {"promotoria": "Não identificada", "email": "N/A", "telefone": "N/A", "municipio_oficial": "Não identificado"}
-        end_limpo = self.remover_acentos(endereco.upper())
-        for m_chave, info in self.municipio_para_promotoria.items():
-            if m_chave in end_limpo:
-                municipio_info = info
-                break
+    def extrair_municipio(self, endereco: str) -> Optional[str]:
+        """Extrai o município do endereço fornecido usando busca textual e LLM como fallback"""
+        if not endereco: return None
+        
+        endereco_upper = self.remover_acentos(endereco.upper())
+        
+        # Busca direta
+        for municipio_chave in self.municipio_para_promotoria.keys():
+            municipio_chave_sem_acento = self.remover_acentos(municipio_chave)
+            if municipio_chave_sem_acento in endereco_upper:
+                return self.municipio_para_promotoria[municipio_chave]["municipio_oficial"]
+        
+        # Fallback com LLM
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-4.1-mini",
+                messages=[
+                    {"role": "system", "content": "Você é um assistente que extrai nomes de cidades de endereços brasileiros. Responda APENAS com o nome da cidade, sem explicações."},
+                    {"role": "user", "content": f"Qual é a cidade neste endereço? '{endereco}'"}
+                ],
+                temperature=0.0,
+                max_tokens=50
+            )
+            municipio_extraido = response.choices[0].message.content.strip().upper()
+            municipio_extraido_sem_acento = self.remover_acentos(municipio_extraido)
+            
+            for municipio_chave in self.municipio_para_promotoria.keys():
+                municipio_chave_sem_acento = self.remover_acentos(municipio_chave)
+                if municipio_chave_sem_acento == municipio_extraido_sem_acento:
+                    return self.municipio_para_promotoria[municipio_chave]["municipio_oficial"]
+        except Exception:
+            pass
+        
+        return None
 
-        # 2. DICIONÁRIO PADRÃO: Resolve o erro "KeyError: 'email'"
-        res_final = {
+    def gerar_resumo(self, denuncia: str) -> str:
+        """Gera um resumo de uma frase da denúncia com redundância de modelos"""
+        for modelo in self.modelos_disponiveis:
+            try:
+                response = self.client.chat.completions.create(
+                    model=modelo,
+                    messages=[
+                        {"role": "system", "content": "Você é um assistente que cria resumos concisos de denúncias. Responda com UMA ÚNICA FRASE começando com 'Denúncia referente a'. Máximo 15 palavras."},
+                        {"role": "user", "content": f"Resuma esta denúncia: {denuncia}"}
+                    ],
+                    temperature=0.0,
+                    max_tokens=50
+                )
+                return response.choices[0].message.content.strip()
+            except Exception as e:
+                continue
+        
+        return "Denúncia referente a reclamação do consumidor."
+
+    def classificar_denuncia(self, denuncia: str) -> Dict:
+        """Classifica a denúncia usando LLM com restrição rigorosa ao catálogo e redundância de modelos"""
+        # Preparar catálogo para o prompt
+        catalogo_str = ""
+        for tema, subtemas in self.temas_subtemas.items():
+            catalogo_str += f"- TEMA: {tema}\n  SUBTEMAS: {', '.join(subtemas)}\n"
+
+        for modelo in self.modelos_disponiveis:
+            try:
+                response = self.client.chat.completions.create(
+                    model=modelo,
+                    messages=[
+                        {"role": "system", "content": f"""Você é um classificador de denúncias do MPRJ. 
+                        Sua tarefa é classificar a denúncia EXATAMENTE de acordo com o catálogo oficial abaixo.
+                        
+                        REGRAS OBRIGATÓRIAS:
+                        1. Escolha APENAS um TEMA da lista fornecida.
+                        2. Escolha APENAS um SUBTEMA que pertença ao TEMA escolhido.
+                        3. NUNCA crie temas ou subtemas novos. Se estiver em dúvida, escolha o mais próximo.
+                        4. Identifique a empresa mencionada. Se não houver, use "Empresa não identificada".
+                        
+                        CATÁLOGO OFICIAL:
+                        {catalogo_str}
+                        
+                        Retorne APENAS um JSON no formato:
+                        {{"tema": "NOME_DO_TEMA", "subtema": "NOME_DO_SUBTEMA", "empresa": "NOME_DA_EMPRESA"}}"""},
+                        {"role": "user", "content": f"Classifique esta denúncia: {denuncia}"}
+                    ],
+                    temperature=0.0,
+                    max_tokens=200
+                )
+                
+                try:
+                    resultado = json.loads(response.choices[0].message.content.strip())
+                    
+                    # Validação final contra o catálogo
+                    tema_escolhido = resultado.get("tema", "Serviços")
+                    if tema_escolhido not in self.temas_subtemas:
+                        tema_escolhido = "Serviços"
+                    
+                    subtemas_validos = self.temas_subtemas[tema_escolhido]
+                    subtema_escolhido = resultado.get("subtema", subtemas_validos[0])
+                    
+                    if subtema_escolhido not in subtemas_validos:
+                        subtema_escolhido = subtemas_validos[0]
+                    
+                    return {
+                        "tema": tema_escolhido,
+                        "subtema": subtema_escolhido,
+                        "empresa": resultado.get("empresa", "Empresa não identificada")
+                    }
+                except Exception:
+                    continue
+            except Exception as e:
+                continue
+        
+        # Fallback final se todos os modelos falharem
+        return {
+            "tema": "Serviços",
+            "subtema": "Serviços On-line (E-mails, Aplicativos, Redes Sociais, Hospedagem de Sites, etc.)",
+            "empresa": "Empresa não identificada"
+        }
+
+    def processar_denuncia(self, endereco: str, denuncia: str, num_comunicacao: str = "", num_mprj: str = "") -> Dict:
+        """Processa uma denúncia completa"""
+        municipio = self.extrair_municipio(endereco)
+        
+        if municipio and municipio.upper() in self.municipio_para_promotoria:
+            promotoria_info = self.municipio_para_promotoria[municipio.upper()]
+        else:
+            promotoria_info = {
+                "promotoria": "Promotoria não identificada",
+                "email": "N/A",
+                "telefone": "N/A",
+                "municipio_oficial": municipio or "Não identificado"
+            }
+        
+        classificacao = self.classificar_denuncia(denuncia)
+        resumo = self.gerar_resumo(denuncia)
+        
+        return {
             "num_comunicacao": num_comunicacao or "N/A",
             "num_mprj": num_mprj or "N/A",
             "endereco": endereco,
             "denuncia": denuncia,
-            "municipio": municipio_info["municipio_oficial"],
-            "promotoria": municipio_info["promotoria"],
-            "email": municipio_info["email"],
-            "telefone": municipio_info["telefone"],
-            "tema": "Não classificado",
-            "subtema": "Não identificado",
-            "empresa": "Não identificada",
-            "resumo": "Processando análise..."
+            "municipio": promotoria_info.get("municipio_oficial", "Não identificado"),
+            "promotoria": promotoria_info.get("promotoria", "Promotoria não identificada"),
+            "email": promotoria_info.get("email", "N/A"),
+            "telefone": promotoria_info.get("telefone", "N/A"),
+            "tema": classificacao.get("tema", "Serviços"),
+            "subtema": classificacao.get("subtema", "Não classificado"),
+            "empresa": classificacao.get("empresa", "Empresa não identificada"),
+            "resumo": resumo
         }
-
-        # 3. EXTRAÇÃO RÍGIDA: Envia apenas subtemas para a IA
-        lista_subtemas = list(self.subtema_para_tema.keys())
-        prompt = f"""Analise a denúncia e escolha o SUBTEMA EXATO da lista oficial.
-        LISTA: {lista_subtemas}
-        DENÚNCIA: "{denuncia}"
-        Responda APENAS um JSON puro: {{"subtema": "NOME_EXATO", "empresa": "NOME", "resumo": "RESUMO_CURTO"}}"""
-
-        try:
-            response = self.model.generate_content(prompt)
-            res_text = response.text.replace('```json', '').replace('```', '').strip()
-            dados_ia = json.loads(res_text)
-            
-            sub = dados_ia.get("subtema")
-            # O Python define o Tema baseado no JSON (Vínculo infalível)
-            res_final["subtema"] = sub
-            res_final["tema"] = self.subtema_para_tema.get(sub, "Outros")
-            res_final["empresa"] = dados_ia.get("empresa", "Não identificada")
-            res_final["resumo"] = dados_ia.get("resumo", "Resumo indisponível")
-
-        except Exception:
-            res_final["resumo"] = "⚠️ Falha na análise automática. Tente novamente em 1 minuto."
-            res_final["subtema"] = "IA Indisponível"
-
-        return res_final
