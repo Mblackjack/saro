@@ -7,16 +7,16 @@ from typing import Dict
 
 class ClassificadorDenuncias:
     def __init__(self):
+        # 1. Configuração da API
         api_key = st.secrets.get("GOOGLE_API_KEY")
         if not api_key:
-            st.error("❌ GOOGLE_API_KEY não configurada.")
+            st.error("❌ GOOGLE_API_KEY não configurada nos Secrets.")
             st.stop()
 
-        # Configuração mínima
         genai.configure(api_key=api_key)
         
-        # Usando o modelo sem o prefixo 'models/' para deixar o SDK decidir a rota
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
+        # AJUSTE DE COMPATIBILIDADE: Usando a versão de produção estável
+        self.model = genai.GenerativeModel(model_name='models/gemini-1.5-flash-latest')
         
         self.base_path = os.path.dirname(os.path.abspath(__file__))
         self.carregar_bases()
@@ -46,6 +46,7 @@ class ClassificadorDenuncias:
         return "".join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
     def processar_denuncia(self, endereco: str, denuncia: str, num_comunicacao: str = "", num_mprj: str = "") -> Dict:
+        # Identificação de Promotoria
         municipio_info = None
         end_upper = self.remover_acentos(endereco.upper())
         for m_chave, info in self.municipio_para_promotoria.items():
@@ -56,16 +57,21 @@ class ClassificadorDenuncias:
         if not municipio_info:
             municipio_info = {"promotoria": "Não identificada", "email": "N/A", "telefone": "N/A", "municipio_oficial": "Não identificado"}
 
-        # Resolve o problema do Subtema: envia a lista estruturada
+        # RESOLUÇÃO DO SUBTEMA: Criando a árvore de decisão para a IA
         mapeamento_txt = ""
         for tema, subs in self.temas_subtemas.items():
-            mapeamento_txt += f"- TEMA: {tema} | SUBTEMAS VÁLIDOS: [{', '.join(subs)}]\n"
+            mapeamento_txt += f"TEMA: {tema} | SUBTEMAS VÁLIDOS: [{', '.join(subs)}]\n"
 
-        prompt = f"""Classifique a denúncia: "{denuncia}"
-        Use APENAS os temas e subtemas abaixo:
-        {mapeamento_txt}
+        prompt = f"""Você é um classificador jurídico. Classifique a denúncia abaixo:
+        DENÚNCIA: "{denuncia}"
         
-        Responda APENAS JSON: {{"tema": "...", "subtema": "...", "empresa": "...", "resumo": "..."}}"""
+        REGRAS RÍGIDAS:
+        1. Escolha o TEMA e o SUBTEMA estritamente da lista abaixo:
+        {mapeamento_txt}
+        2. O subtema deve ser um dos itens listados dentro do tema escolhido.
+        
+        Responda APENAS um objeto JSON no formato:
+        {{"tema": "...", "subtema": "...", "empresa": "...", "resumo": "..."}}"""
 
         resultado_final = {
             "num_comunicacao": num_comunicacao, "num_mprj": num_mprj,
@@ -74,15 +80,23 @@ class ClassificadorDenuncias:
             "promotoria": municipio_info["promotoria"],
             "email": municipio_info["email"],
             "telefone": municipio_info["telefone"],
-            "tema": "Erro de Conexão", "subtema": "Erro de Conexão",
-            "empresa": "Não identificada", "resumo": "Aguardando atualização do servidor..."
+            "tema": "Processando...", "subtema": "Processando...",
+            "empresa": "Não identificada", "resumo": "Aguardando retorno da IA."
         }
 
         try:
             response = self.model.generate_content(prompt)
-            dados_ia = json.loads(response.text.replace('```json', '').replace('```', '').strip())
+            res_text = response.text.strip()
+            
+            # Limpeza de blocos JSON
+            if "```json" in res_text:
+                res_text = res_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in res_text:
+                res_text = res_text.split("```")[1].split("```")[0].strip()
+            
+            dados_ia = json.loads(res_text)
             resultado_final.update(dados_ia)
         except Exception as e:
-            st.error(f"Erro na IA: {e}")
+            st.error(f"Erro na análise: {e}")
 
         return resultado_final
