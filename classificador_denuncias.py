@@ -8,7 +8,7 @@ from typing import Dict, Optional
 class ClassificadorDenuncias:
     def __init__(self):
         api_key = st.secrets.get("GOOGLE_API_KEY")
-        if not api_key:
+    if not api_key:
             st.error("❌ GOOGLE_API_KEY não configurada nos Secrets.")
             st.stop()
 
