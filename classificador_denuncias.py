@@ -1,5 +1,3 @@
-MODELO QUE DÁ CERTO
-
 import json
 import os
 import unicodedata
