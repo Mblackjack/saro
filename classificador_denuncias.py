@@ -15,7 +15,7 @@ class ClassificadorDenuncias:
 
         genai.configure(api_key=api_key)
         
-        # Nome do modelo estável para evitar erro 404
+        # AJUSTE: Usando o nome direto para evitar conflito de versão v1beta/v1
         self.model_name = 'gemini-1.5-flash' 
         self.model = genai.GenerativeModel(self.model_name)
         
@@ -33,7 +33,7 @@ class ClassificadorDenuncias:
             st.error(f"❌ Erro ao carregar as bases JSON: {e}")
             st.stop()
             
-        # Mapeia municípios para promotorias (para busca rápida)
+        # Mapeia municípios para promotorias
         self.municipio_para_promotoria = {
             m.upper(): {
                 "promotoria": d["promotoria"], 
@@ -52,7 +52,7 @@ class ClassificadorDenuncias:
     def processar_denuncia(self, endereco: str, denuncia: str, num_comunicacao: str = "", num_mprj: str = "") -> Dict:
         """Processa a denúncia usando IA e identifica a promotoria local."""
         
-        # 1. Identificação do Município por texto (Baseado no Endereço)
+        # 1. Identificação do Município (Baseado no Endereço)
         municipio_nome = None
         end_upper = self.remover_acentos(endereco.upper())
         for m_chave in self.municipio_para_promotoria.keys():
@@ -70,14 +70,13 @@ class ClassificadorDenuncias:
             }
         )
 
-        # 2. Preparação da Hierarquia de Temas/Subtemas para o Prompt
-        # Isso garante que a IA saiba quais subtemas pertencem a quais temas
+        # 2. Preparação da Hierarquia de Temas/Subtemas
         mapeamento_txt = ""
         for tema, subtemas in self.temas_subtemas.items():
             sub_list = ", ".join(subtemas)
             mapeamento_txt += f"- TEMA: {tema} | SUBTEMAS PERMITIDOS: [{sub_list}]\n"
         
-        # 3. Construção do Prompt para o Gemini
+        # 3. Construção do Prompt
         prompt = f"""Você é um assistente jurídico especializado em triagem de ouvidorias.
 Sua tarefa é classificar a denúncia abaixo seguindo RIGOROSAMENTE as listas fornecidas.
 
@@ -105,7 +104,7 @@ RESPONDA APENAS com um objeto JSON puro (sem comentários ou markdown):
             response = self.model.generate_content(prompt)
             res_text = response.text.strip()
             
-            # Limpeza de possíveis blocos de código Markdown
+            # Limpeza de blocos de código Markdown
             if "```json" in res_text:
                 res_text = res_text.split("```json")[1].split("```")[0].strip()
             elif "```" in res_text:
@@ -121,7 +120,6 @@ RESPONDA APENAS com um objeto JSON puro (sem comentários ou markdown):
                 "resumo": "Falha ao processar a descrição da denúncia."
             }
 
-        # 4. Retorno do Dicionário Consolidado
         return {
             "num_comunicacao": num_comunicacao,
             "num_mprj": num_mprj,
