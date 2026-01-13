@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Classificador de Denúncias do Consumidor - SARO v6.0
-Motor: Google Gemini 1.5 Flash
+Classificador de Denúncias do Consumidor - SARO v6.1
+Motor: OpenAI GPT-4o-mini
 Garantia de hierarquia rígida via Mapeamento Reverso.
 """
 
@@ -12,34 +12,33 @@ import time
 from typing import Dict, List, Optional
 import streamlit as st
 
-# Importar Google Generative AI
+# Importar OpenAI
 try:
-    import google.generativeai as genai
+    from openai import OpenAI
 except ImportError:
-    st.error("❌ Erro: Biblioteca 'google-generativeai' não instalada. Adicione ao requirements.txt.")
+    st.error("❌ Erro: Biblioteca 'openai' não instalada. Adicione ao requirements.txt.")
     st.stop()
 
 class ClassificadorDenuncias:
     def __init__(self):
-        # 1. Configuração da API do Gemini via Secrets
-        api_key = st.secrets.get("GOOGLE_API_KEY")
+        # 1. Configuração da API da OpenAI via Secrets
+        api_key = st.secrets.get("OPENAI_API_KEY")
         
         if not api_key:
             st.error(
-                "❌ **GOOGLE_API_KEY não configurada!**\n\n"
+                "❌ **OPENAI_API_KEY não configurada!**\n\n"
                 "Vá em Settings > Secrets no Streamlit e adicione:\n"
                 "```\n"
-                "GOOGLE_API_KEY = \"sua-chave-aqui\"\n"
+                "OPENAI_API_KEY = \"sua-chave-aqui\"\n"
                 "```"
             )
             st.stop()
         
         try:
-            genai.configure(api_key=api_key)
-            # Uso do modelo estável para evitar Erro 404 (conforme visto nas imagens)
-            self.model = genai.GenerativeModel('gemini-1.5-flash')
+            self.client = OpenAI(api_key=api_key)
+            self.model = "gpt-4o-mini"
         except Exception as e:
-            st.error(f"❌ Erro ao conectar com Google Gemini: {str(e)}")
+            st.error(f"❌ Erro ao conectar com OpenAI: {str(e)}")
             st.stop()
         
         self.base_path = os.path.dirname(os.path.abspath(__file__))
@@ -78,75 +77,68 @@ class ClassificadorDenuncias:
         if not texto: return ""
         return "".join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
-    def chamar_ia_com_retry(self, prompt: str) -> Optional[str]:
-        """Tenta chamar a IA com tratamento de cota (Erro 429)"""
-        for tentativa in range(3):
-            try:
-                response = self.model.generate_content(prompt)
-                return response.text
-            except Exception as e:
-                if "429" in str(e):
-                    time.sleep(5) 
-                    continue
-                return None
-        return None
+    def chamar_ia(self, prompt: str) -> Optional[str]:
+        """Chama a OpenAI com tratamento de erro"""
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0,
+                response_format={ "type": "json_object" }
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            st.warning(f"⚠️ Erro na OpenAI: {e}")
+            return None
 
     def extrair_municipio(self, endereco: str) -> Optional[str]:
         if not endereco: return None
         endereco_upper = self.remover_acentos(endereco.upper())
         
+        # Busca Direta no Texto (Mais rápido e barato)
         for m_chave, info in self.municipio_para_promotoria.items():
             if m_chave in endereco_upper:
                 return info["municipio_oficial"]
-        
-        prompt = f"Extraia apenas o nome da cidade deste endereço: '{endereco}'. Responda apenas o nome da cidade."
-        cidade_ia = self.chamar_ia_com_retry(prompt)
-        if cidade_ia:
-            cidade_limpa = self.remover_acentos(cidade_ia.strip().upper())
-            for m_chave, info in self.municipio_para_promotoria.items():
-                if m_chave == cidade_limpa:
-                    return info["municipio_oficial"]
         return None
 
     def classificar_denuncia(self, denuncia: str) -> Dict:
         """Classifica a denúncia focando no SUBTEMA para evitar alucinação"""
         todos_subtemas = list(self.subtema_para_tema.keys())
         
-        prompt = f"""Analise a denúncia e identifique o SUBTEMA EXATO da lista oficial.
+        prompt = f"""Você é um classificador do MPRJ. Analise a denúncia e identifique o SUBTEMA EXATO da lista oficial.
+        
         LISTA OFICIAL: {todos_subtemas}
         
         DENÚNCIA: "{denuncia}"
 
         Responda APENAS um JSON no formato:
-        {{"subtema": "NOME_EXATO_DA_LISTA", "empresa": "NOME_DA_EMPRESA", "resumo": "RESUMO_CURTO"}}"""
+        {{"subtema": "NOME_EXATO_DA_LISTA", "empresa": "NOME_DA_EMPRESA", "resumo": "RESUMO_CURTO_DE_UMA_FRASE"}}"""
 
+        res_json = self.chamar_ia(prompt)
+        
         try:
-            res_text = self.chamar_ia_com_retry(prompt)
-            if not res_text: raise Exception("IA Indisponível")
-            
-            res_text = res_text.replace('```json', '').replace('```', '').strip()
-            dados_ia = json.loads(res_text)
-            
+            dados_ia = json.loads(res_json)
             sub_escolhido = dados_ia.get("subtema")
-            # VÍNCULO AUTOMÁTICO: O Python define o tema baseado no subtema escolhido
+            
+            # VÍNCULO AUTOMÁTICO: O Python define o tema baseado no subtema escolhido pelo dicionário
             tema_final = self.subtema_para_tema.get(sub_escolhido, "Serviços")
             
             return {
                 "tema": tema_final,
                 "subtema": sub_escolhido if sub_escolhido in self.subtema_para_tema else "Não classificado",
                 "empresa": dados_ia.get("empresa", "Não identificada"),
-                "resumo": dados_ia.get("resumo", "Resumo automático indisponível")
+                "resumo": dados_ia.get("resumo", "Resumo indisponível")
             }
         except:
             return {
                 "tema": "Serviços", 
                 "subtema": "Não classificado", 
                 "empresa": "Não identificada", 
-                "resumo": "Falha na análise automática (Verifique a conexão)."
+                "resumo": "Falha na análise automática."
             }
 
     def processar_denuncia(self, endereco: str, denuncia: str, num_comunicacao: str = "", num_mprj: str = "") -> Dict:
-        # 1. Identificar Localidade e Promotoria (Evita KeyError de e-mail/telefone)
+        # 1. Identificar Localidade e Promotoria
         municipio = self.extrair_municipio(endereco)
         municipio_chave = self.remover_acentos(municipio.upper()) if municipio else ""
         
@@ -158,7 +150,7 @@ class ClassificadorDenuncias:
         # 2. Classificar Denúncia com IA
         classificacao = self.classificar_denuncia(denuncia)
         
-        # 3. Retorno Garantido com todos os campos necessários
+        # 3. Retorno Garantido (Evita KeyError: 'email')
         return {
             "num_comunicacao": num_comunicacao or "N/A",
             "num_mprj": num_mprj or "N/A",
