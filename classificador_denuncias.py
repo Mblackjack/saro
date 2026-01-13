@@ -7,22 +7,17 @@ from typing import Dict
 
 class ClassificadorDenuncias:
     def __init__(self):
-        # 1. Configuração da API
         api_key = st.secrets.get("GOOGLE_API_KEY")
         if not api_key:
-            st.error("❌ GOOGLE_API_KEY não configurada nos Secrets.")
+            st.error("❌ GOOGLE_API_KEY não configurada.")
             st.stop()
 
-        # Configuração Direta para evitar v1beta
+        # Configuração mínima
         genai.configure(api_key=api_key)
         
-        # AJUSTE DEFINITIVO: Tentando inicializar o modelo de forma simples
-        # Se o gemini-pro falhar, ele tentará o gemini-1.5-flash como backup
-        try:
-            self.model = genai.GenerativeModel('gemini-1.5-flash')
-        except:
-            self.model = genai.GenerativeModel('gemini-pro')
-            
+        # Usando o modelo sem o prefixo 'models/' para deixar o SDK decidir a rota
+        self.model = genai.GenerativeModel('gemini-1.5-flash')
+        
         self.base_path = os.path.dirname(os.path.abspath(__file__))
         self.carregar_bases()
 
@@ -51,7 +46,6 @@ class ClassificadorDenuncias:
         return "".join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
     def processar_denuncia(self, endereco: str, denuncia: str, num_comunicacao: str = "", num_mprj: str = "") -> Dict:
-        # Identificação de Promotoria (Funcionando conforme imagem)
         municipio_info = None
         end_upper = self.remover_acentos(endereco.upper())
         for m_chave, info in self.municipio_para_promotoria.items():
@@ -62,21 +56,17 @@ class ClassificadorDenuncias:
         if not municipio_info:
             municipio_info = {"promotoria": "Não identificada", "email": "N/A", "telefone": "N/A", "municipio_oficial": "Não identificado"}
 
-        # Mapeamento de Temas/Subtemas para a IA
+        # Resolve o problema do Subtema: envia a lista estruturada
         mapeamento_txt = ""
         for tema, subs in self.temas_subtemas.items():
-            mapeamento_txt += f"- TEMA: {tema} | SUBTEMAS: {', '.join(subs)}\n"
+            mapeamento_txt += f"- TEMA: {tema} | SUBTEMAS VÁLIDOS: [{', '.join(subs)}]\n"
 
-        prompt = f"""Analise a denúncia e classifique em TEMA e SUBTEMA da lista oficial.
-        LISTA:
+        prompt = f"""Classifique a denúncia: "{denuncia}"
+        Use APENAS os temas e subtemas abaixo:
         {mapeamento_txt}
         
-        DENÚNCIA: "{denuncia}"
-        
-        Retorne APENAS um JSON:
-        {{"tema": "...", "subtema": "...", "empresa": "...", "resumo": "..."}}"""
+        Responda APENAS JSON: {{"tema": "...", "subtema": "...", "empresa": "...", "resumo": "..."}}"""
 
-        # Resposta de fallback (que você viu na imagem como 'A definir')
         resultado_final = {
             "num_comunicacao": num_comunicacao, "num_mprj": num_mprj,
             "endereco": endereco, "denuncia": denuncia,
@@ -84,26 +74,15 @@ class ClassificadorDenuncias:
             "promotoria": municipio_info["promotoria"],
             "email": municipio_info["email"],
             "telefone": municipio_info["telefone"],
-            "tema": "A definir", "subtema": "A definir",
-            "empresa": "Não identificada", "resumo": "Aguardando processamento"
+            "tema": "Erro de Conexão", "subtema": "Erro de Conexão",
+            "empresa": "Não identificada", "resumo": "Aguardando atualização do servidor..."
         }
 
         try:
-            # A chamada generate_content pode aceitar a versão da API em algumas versões do SDK
             response = self.model.generate_content(prompt)
-            res_text = response.text.strip()
-            
-            if "```json" in res_text:
-                res_text = res_text.split("```json")[1].split("```")[0].strip()
-            
-            dados_ia = json.loads(res_text)
-            resultado_final.update({
-                "tema": dados_ia.get("tema", "Não identificado"),
-                "subtema": dados_ia.get("subtema", "Não identificado"),
-                "empresa": dados_ia.get("empresa", "Não identificada"),
-                "resumo": dados_ia.get("resumo", "Resumo indisponível")
-            })
+            dados_ia = json.loads(response.text.replace('```json', '').replace('```', '').strip())
+            resultado_final.update(dados_ia)
         except Exception as e:
-            st.error(f"⚠️ Erro de API: {e}")
+            st.error(f"Erro na IA: {e}")
 
         return resultado_final
