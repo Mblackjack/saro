@@ -7,7 +7,7 @@ from typing import Dict
 
 class ClassificadorDenuncias:
     def __init__(self):
-        # 1. Configuração da API via Secrets
+        # 1. Configuração da API
         api_key = st.secrets.get("GOOGLE_API_KEY")
         if not api_key:
             st.error("❌ GOOGLE_API_KEY não configurada nos Secrets.")
@@ -16,7 +16,7 @@ class ClassificadorDenuncias:
         genai.configure(api_key=api_key)
         
         # 2. Inicialização do Modelo (Gemini 1.5 Flash)
-        # O uso do nome direto ajuda a evitar o redirecionamento para v1beta
+        # O uso do nome direto ajuda a evitar o redirecionamento automático para v1beta
         try:
             self.model = genai.GenerativeModel('gemini-1.5-flash')
         except Exception as e:
@@ -27,7 +27,7 @@ class ClassificadorDenuncias:
         self.carregar_bases()
 
     def carregar_bases(self):
-        """Carrega os arquivos JSON de temas e promotorias."""
+        """Carrega os arquivos JSON de suporte."""
         try:
             with open(os.path.join(self.base_path, "base_temas_subtemas.json"), 'r', encoding='utf-8') as f:
                 self.temas_subtemas = json.load(f)
@@ -37,7 +37,7 @@ class ClassificadorDenuncias:
             st.error(f"❌ Erro ao carregar ficheiros JSON: {e}")
             st.stop()
             
-        # Mapeia municípios para promotorias
+        # Mapeamento de municípios para promotorias
         self.municipio_para_promotoria = {}
         for d in self.base_promotorias.values():
             for m in d.get("municipios", []):
@@ -49,14 +49,12 @@ class ClassificadorDenuncias:
                 }
 
     def remover_acentos(self, texto: str) -> str:
-        """Normaliza texto para facilitar a busca por municípios."""
+        """Normaliza texto para busca."""
         if not texto: return ""
         return "".join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
     def processar_denuncia(self, endereco: str, denuncia: str, num_comunicacao: str = "", num_mprj: str = "") -> Dict:
-        """Processa a denúncia e classifica via IA."""
-        
-        # Identificação da Promotoria baseada no endereço
+        # Identificação Local (Município/Promotoria)
         municipio_info = None
         end_limpo = self.remover_acentos(endereco.upper())
         for m_chave, info in self.municipio_para_promotoria.items():
@@ -66,27 +64,25 @@ class ClassificadorDenuncias:
         
         if not municipio_info:
             municipio_info = {
-                "promotoria": "Não identificada", 
-                "email": "N/A", 
-                "telefone": "N/A", 
-                "municipio_oficial": "Não identificado"
+                "promotoria": "Não identificada", "email": "N/A", 
+                "telefone": "N/A", "municipio_oficial": "Não identificado"
             }
 
-        # RESOLUÇÃO DO SUBTEMA: Guia hierárquico para a IA
+        # RESOLUÇÃO DO SUBTEMA: Criando a árvore hierárquica para a IA
         mapeamento_txt = ""
         for tema, subs in self.temas_subtemas.items():
-            mapeamento_txt += f"- TEMA: {tema} | SUBTEMAS: {', '.join(subs)}\n"
+            mapeamento_txt += f"TEMA: {tema} | SUBTEMAS VÁLIDOS: [{', '.join(subs)}]\n"
 
-        prompt = f"""Analise a denúncia: "{denuncia}"
+        prompt = f"""Você é um classificador jurídico preciso. Analise a denúncia: "{denuncia}"
         
-        REGRAS:
-        1. Escolha o TEMA e o SUBTEMA estritamente da lista abaixo.
-        2. O subtema DEVE pertencer ao tema escolhido.
+        REGRAS RÍGIDAS:
+        1. Classifique usando APENAS a lista oficial abaixo.
+        2. O SUBTEMA deve obrigatoriamente pertencer ao TEMA escolhido.
         
         LISTA OFICIAL:
         {mapeamento_txt}
         
-        Responda APENAS um JSON puro:
+        Retorne APENAS um JSON:
         {{
           "tema": "...",
           "subtema": "...",
@@ -94,31 +90,25 @@ class ClassificadorDenuncias:
           "resumo": "..."
         }}"""
 
-        # Valor padrão para evitar erro de NoneType
+        # Resposta padrão para evitar erros de 'NoneType'
         resultado = {
-            "num_comunicacao": num_comunicacao,
-            "num_mprj": num_mprj,
-            "endereco": endereco,
-            "denuncia": denuncia,
+            "num_comunicacao": num_comunicacao, "num_mprj": num_mprj,
+            "endereco": endereco, "denuncia": denuncia,
             "municipio": municipio_info["municipio_oficial"],
             "promotoria": municipio_info["promotoria"],
             "email": municipio_info["email"],
             "telefone": municipio_info["telefone"],
-            "tema": "Não classificado",
-            "subtema": "Não classificado",
-            "empresa": "Não identificada",
-            "resumo": "A IA falhou devido a um erro de conexão (404 API)."
+            "tema": "Erro na IA", "subtema": "Erro na IA",
+            "empresa": "Não identificada", "resumo": "A IA falhou devido ao erro 404 (v1beta)."
         }
 
         try:
             response = self.model.generate_content(prompt)
             res_text = response.text.strip()
             
-            # Limpeza de blocos Markdown
+            # Limpeza de Markdown
             if "```json" in res_text:
                 res_text = res_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in res_text:
-                res_text = res_text.split("```")[1].split("```")[0].strip()
             
             dados_ia = json.loads(res_text)
             resultado.update({
