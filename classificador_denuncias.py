@@ -8,17 +8,15 @@ from typing import Dict, Optional
 
 class ClassificadorDenuncias:
     def __init__(self):
-        # 1. Recupera a chave
         api_key = st.secrets.get("GOOGLE_API_KEY")
         if not api_key:
             st.error("❌ GOOGLE_API_KEY não configurada nos Secrets.")
             st.stop()
 
-        # Configuração inicial
         genai.configure(api_key=api_key)
         
-        # Tentamos o modelo mais estável disponível
-        self.model_name = 'models/gemini-1.5-flash' 
+        # AJUSTE DEFINITIVO: Usando o modelo exato da sua lista de permissões
+        self.model_name = 'models/gemini-2.0-flash' 
         self.model = genai.GenerativeModel(self.model_name)
         
         self.base_path = os.path.dirname(os.path.abspath(__file__))
@@ -44,7 +42,6 @@ class ClassificadorDenuncias:
         return "".join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
     def processar_denuncia(self, endereco: str, denuncia: str, num_comunicacao: str = "", num_mprj: str = "") -> Dict:
-        # Lógica de Município (Sempre funciona localmente)
         municipio_nome = None
         end_upper = self.remover_acentos(endereco.upper())
         for m_chave in self.municipio_para_promotoria.keys():
@@ -59,17 +56,19 @@ class ClassificadorDenuncias:
 
         temas_txt = ", ".join(self.temas_subtemas.keys())
         
-        prompt = f"""Responda com JSON puro.
-        Denúncia: "{denuncia}"
-        Temas: {temas_txt}
-        Retorne: tema, subtema, empresa, resumo."""
+        prompt = f"""Responda APENAS com um objeto JSON puro.
+        Analise a denúncia: "{denuncia}"
+        Escolha um TEMA desta lista: {temas_txt}
+        
+        JSON esperado:
+        {{"tema": "...", "subtema": "...", "empresa": "...", "resumo": "Denúncia referente a..."}}"""
 
         try:
-            # Gerar conteúdo
+            # Chamada ao modelo 2.0 que apareceu na sua lista
             response = self.model.generate_content(prompt)
             
-            # Limpeza de resposta
             res_text = response.text.strip()
+            # Limpeza de Markdown
             if "```json" in res_text:
                 res_text = res_text.split("```json")[1].split("```")[0].strip()
             elif "```" in res_text:
@@ -77,15 +76,8 @@ class ClassificadorDenuncias:
             
             dados_ia = json.loads(res_text)
         except Exception as e:
-            # Caso o erro 404 persista, vamos tentar listar os modelos no aviso para você ver
-            try:
-                available_models = [m.name for m in genai.list_models()]
-                msg_erro = f"Modelos disponíveis para sua chave: {available_models}"
-            except:
-                msg_erro = str(e)
-            
-            st.warning(f"IA em ajuste técnico. Detalhe: {msg_erro}")
-            dados_ia = {"tema": "Serviços", "subtema": "Pendente", "empresa": "Não encontrada", "resumo": "Processamento local."}
+            st.error(f"Erro na análise: {e}")
+            dados_ia = {"tema": "Serviços", "subtema": "Erro técnico", "empresa": "Não identificada", "resumo": "Falha no processamento."}
 
         return {
             "num_comunicacao": num_comunicacao, "num_mprj": num_mprj,
