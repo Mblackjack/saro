@@ -21,7 +21,7 @@ except ImportError:
 
 class ClassificadorDenuncias:
     def __init__(self):
-        # 1. Configuração da API do Gemini
+        # 1. Configuração da API do Gemini via Secrets
         api_key = st.secrets.get("GOOGLE_API_KEY")
         
         if not api_key:
@@ -36,7 +36,7 @@ class ClassificadorDenuncias:
         
         try:
             genai.configure(api_key=api_key)
-            # Uso do modelo estável Gemini 1.5 Flash
+            # Uso do modelo estável para evitar Erro 404 (conforme visto nas imagens)
             self.model = genai.GenerativeModel('gemini-1.5-flash')
         except Exception as e:
             st.error(f"❌ Erro ao conectar com Google Gemini: {str(e)}")
@@ -46,7 +46,7 @@ class ClassificadorDenuncias:
         self.carregar_bases()
 
     def carregar_bases(self):
-        """Carrega as bases e cria o vínculo obrigatório Subtema -> Tema"""
+        """Carrega bases e cria o vínculo obrigatório Subtema -> Tema"""
         try:
             with open(os.path.join(self.base_path, "base_temas_subtemas.json"), 'r', encoding='utf-8') as f:
                 self.temas_subtemas = json.load(f)
@@ -54,7 +54,7 @@ class ClassificadorDenuncias:
             with open(os.path.join(self.base_path, "base_promotorias.json"), 'r', encoding='utf-8') as f:
                 self.base_promotorias = json.load(f)
                 
-            # MAPEAMENTO REVERSO: Garante que se a IA escolher o Subtema, o Python acha o Tema.
+            # MAPEAMENTO REVERSO: Garante que se a IA escolher o Subtema, o Python força o Tema correto.
             self.subtema_para_tema = {}
             for tema, subtemas in self.temas_subtemas.items():
                 for sub in subtemas:
@@ -71,7 +71,7 @@ class ClassificadorDenuncias:
                         "municipio_oficial": municipio
                     }
         except Exception as e:
-            st.error(f"❌ Erro ao carregar ficheiros JSON: {e}")
+            st.error(f"❌ Erro crítico ao carregar ficheiros JSON: {e}")
             st.stop()
 
     def remover_acentos(self, texto: str) -> str:
@@ -86,7 +86,7 @@ class ClassificadorDenuncias:
                 return response.text
             except Exception as e:
                 if "429" in str(e):
-                    time.sleep(5) # Espera 5 segundos se a cota exceder
+                    time.sleep(5) 
                     continue
                 return None
         return None
@@ -95,12 +95,10 @@ class ClassificadorDenuncias:
         if not endereco: return None
         endereco_upper = self.remover_acentos(endereco.upper())
         
-        # Busca Direta no Texto
         for m_chave, info in self.municipio_para_promotoria.items():
             if m_chave in endereco_upper:
                 return info["municipio_oficial"]
         
-        # Fallback IA para Cidade
         prompt = f"Extraia apenas o nome da cidade deste endereço: '{endereco}'. Responda apenas o nome da cidade."
         cidade_ia = self.chamar_ia_com_retry(prompt)
         if cidade_ia:
@@ -120,23 +118,22 @@ class ClassificadorDenuncias:
         DENÚNCIA: "{denuncia}"
 
         Responda APENAS um JSON no formato:
-        {{"subtema": "NOME_EXATO_DA_LISTA", "empresa": "NOME_DA_EMPRESA", "resumo": "Denúncia referente a..."}}"""
+        {{"subtema": "NOME_EXATO_DA_LISTA", "empresa": "NOME_DA_EMPRESA", "resumo": "RESUMO_CURTO"}}"""
 
         try:
             res_text = self.chamar_ia_com_retry(prompt)
             if not res_text: raise Exception("IA Indisponível")
             
-            # Limpeza de Markdown JSON
             res_text = res_text.replace('```json', '').replace('```', '').strip()
             dados_ia = json.loads(res_text)
             
             sub_escolhido = dados_ia.get("subtema")
-            # VÍNCULO AUTOMÁTICO: Python define o tema
+            # VÍNCULO AUTOMÁTICO: O Python define o tema baseado no subtema escolhido
             tema_final = self.subtema_para_tema.get(sub_escolhido, "Serviços")
             
             return {
                 "tema": tema_final,
-                "subtema": sub_escolhido if sub_escolhido in self.subtema_para_tema else "Não identificado",
+                "subtema": sub_escolhido if sub_escolhido in self.subtema_para_tema else "Não classificado",
                 "empresa": dados_ia.get("empresa", "Não identificada"),
                 "resumo": dados_ia.get("resumo", "Resumo automático indisponível")
             }
@@ -145,11 +142,11 @@ class ClassificadorDenuncias:
                 "tema": "Serviços", 
                 "subtema": "Não classificado", 
                 "empresa": "Não identificada", 
-                "resumo": "Falha na análise automática."
+                "resumo": "Falha na análise automática (Verifique a conexão)."
             }
 
     def processar_denuncia(self, endereco: str, denuncia: str, num_comunicacao: str = "", num_mprj: str = "") -> Dict:
-        # 1. Localizar Promotoria
+        # 1. Identificar Localidade e Promotoria (Evita KeyError de e-mail/telefone)
         municipio = self.extrair_municipio(endereco)
         municipio_chave = self.remover_acentos(municipio.upper()) if municipio else ""
         
@@ -158,10 +155,10 @@ class ClassificadorDenuncias:
             {"promotoria": "Não identificada", "email": "N/A", "telefone": "N/A", "municipio_oficial": municipio or "Não identificado"}
         )
 
-        # 2. Classificar Denúncia
+        # 2. Classificar Denúncia com IA
         classificacao = self.classificar_denuncia(denuncia)
         
-        # 3. Retorno Consolidado (Blindado contra KeyError)
+        # 3. Retorno Garantido com todos os campos necessários
         return {
             "num_comunicacao": num_comunicacao or "N/A",
             "num_mprj": num_mprj or "N/A",
