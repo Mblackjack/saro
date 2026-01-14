@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-SARO v5.2 - Sistema Automático de Registro de Ouvidorias
-Interface Web com Streamlit - Correção de Indentação
+SARO v6.0 - Sistema Automático de Registro de Ouvidorias
+Interface Web com Tabela Responsiva e Dropdown de Detalhes
 """
 
 import streamlit as st
@@ -17,7 +17,7 @@ st.set_page_config(page_title="SARO - Sistema de Ouvidorias", layout="wide")
 base_path = os.path.dirname(os.path.abspath(__file__))
 historico_file = os.path.join(base_path, "historico_denuncias.json")
 
-# CSS customizado
+# CSS customizado para Tabela e Responsividade
 st.markdown("""
 <style>
     .resumo-box {
@@ -26,20 +26,27 @@ st.markdown("""
         border-radius: 8px;
         border-left: 4px solid #1f77b4;
     }
-    .tabela-container {
-        max-height: 500px;
-        overflow-y: auto;
-        border: 1px solid #ddd;
-        border-radius: 5px;
-        padding: 10px;
-        background-color: white;
-    }
-    .modal-container {
-        background-color: #f9f9f9;
-        border: 2px solid #1f77b4;
+    /* Container com rolagem horizontal */
+    .tabela-horizontal {
+        overflow-x: auto;
+        width: 100%;
+        border: 1px solid #e6e9ef;
         border-radius: 8px;
-        padding: 20px;
-        margin-top: 20px;
+    }
+    /* Estilização das "linhas" da tabela */
+    .row-style {
+        padding: 10px;
+        border-bottom: 1px solid #f0f2f6;
+        transition: background-color 0.3s;
+    }
+    .row-style:hover {
+        background-color: #f8f9fb;
+    }
+    .header-style {
+        background-color: #f0f2f6;
+        font-weight: bold;
+        padding: 10px;
+        border-radius: 8px 8px 0 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -49,8 +56,6 @@ if "resultado" not in st.session_state:
     st.session_state.resultado = None
 if "historico" not in st.session_state:
     st.session_state.historico = []
-if "visualizando_registro" not in st.session_state:
-    st.session_state.visualizando_registro = None
 
 # Carregar histórico
 if os.path.exists(historico_file):
@@ -62,7 +67,7 @@ if os.path.exists(historico_file):
 
 # Cabeçalho
 st.title("⚖️ SARO - Sistema Automático de Registro de Ouvidorias")
-st.markdown("**Versão 5.2** | Classificação automática de denúncias")
+st.markdown("**Versão 6.0** | Classificação automática e Gestão de Dados")
 st.divider()
 
 # Inicializar classificador
@@ -103,7 +108,7 @@ if submit:
                 resultado.update({
                     "responsavel": responsavel,
                     "consumidor_vencedor": consumidor_vencedor,
-                    "data": datetime.now().strftime("%d/%m/%Y %H:%M")
+                    "data_envio": datetime.now().strftime("%d/%m/%Y %H:%M")
                 })
                 st.session_state.resultado = resultado
                 st.session_state.historico.append(resultado)
@@ -113,20 +118,20 @@ if submit:
             except Exception as e:
                 st.error(f"Erro: {e}")
 
-st.divider()
-
 # ============ 2. RESULTADO DA CLASSIFICAÇÃO ============
 if st.session_state.resultado:
+    st.divider()
     res = st.session_state.resultado
     st.markdown("### ✅ Resultado da Classificação")
     
-    col1, col2 = st.columns(2)
-    with col1:
+    col_r1, col_r2 = st.columns(2)
+    with col_r1:
         st.info(f"**Nº Comunicação:** {res['num_comunicacao']}")
-    with col2:
+    with col_r2:
         st.info(f"**Nº MPRJ:** {res['num_mprj']}")
     
-    st.info(f"**Promotoria Responsável:** {res['promotoria']}")
+    # Exibição da Promotoria e Município como solicitado
+    st.info(f"📍 **Município:** {res['municipio']}\n\n🏛️ **Promotoria Responsável:** {res['promotoria']}")
     st.markdown(f"📧 **E-mail:** {res['email']} | 📞 **Telefone:** {res['telefone']}")
     
     c1, c2, c3 = st.columns(3)
@@ -146,15 +151,16 @@ if st.session_state.resultado:
 
 st.divider()
 
-# ============ 3. REGISTRO DE OUVIDORIAS (TABELA) ============
+# ============ 3. REGISTRO DE OUVIDORIAS (TABELA COMPLETA) ============
 st.markdown("### 📊 Registro de Ouvidorias")
 
 if not st.session_state.historico:
     st.info("Nenhuma ouvidoria registrada.")
 else:
-    c1, c2 = st.columns([3, 1])
-    search = c1.text_input("🔍 Buscar no histórico")
-    filtro_tema = c2.selectbox("Filtrar Tema", ["Todos"] + sorted(list(set(h['tema'] for h in st.session_state.historico))))
+    # Filtros
+    c_f1, c_f2 = st.columns([3, 1])
+    search = c_f1.text_input("🔍 Buscar no histórico (Nº, Empresa, Descrição...)")
+    filtro_tema = c_f2.selectbox("Filtrar Tema", ["Todos"] + sorted(list(set(h['tema'] for h in st.session_state.historico))))
 
     dados = st.session_state.historico
     if search:
@@ -163,58 +169,79 @@ else:
     if filtro_tema != "Todos":
         dados = [h for h in dados if h['tema'] == filtro_tema]
 
-    st.markdown('<div class="tabela-container">', unsafe_allow_html=True)
-    cols = st.columns([1.5, 1.5, 1.5, 2, 1.5, 1, 1])
-    cols[0].write("**Nº Com.**"); cols[1].write("**Data**"); cols[2].write("**Empresa**")
-    cols[3].write("**Promotoria**"); cols[4].write("**Responsável**"); cols[5].write("**Ver**"); cols[6].write("**Apagar**")
+    # Botão Mostrar Mais / Menos
+    total_registros = len(dados)
+    limite = 5
+    mostrar_tudo = st.checkbox(f"Mostrar todos os {total_registros} registros", value=False)
+    
+    if not mostrar_tudo:
+        dados_exibicao = list(reversed(dados))[:limite]
+        st.caption(f"Exibindo os {limite} mais recentes.")
+    else:
+        dados_exibicao = list(reversed(dados))
+
+    # --- INÍCIO DA TABELA COM ROLAGEM ---
+    st.markdown('<div class="tabela-horizontal">', unsafe_allow_html=True)
+    
+    # Cabeçalho da Tabela
+    # Ordem: Ver/Apagar, Nº Com, Nº MPRJ, Data, Denúncia, Resumo, Tema, Subtema, Empresa, Consumidor Vencedor, Enviado por
+    h_cols = st.columns([0.8, 1.2, 1.2, 1.2, 2, 1.5, 1.2, 1.2, 1.2, 1, 1])
+    headers = ["Ações", "Nº Com.", "Nº MPRJ", "Data Envio", "Denúncia", "Resumo", "Tema", "Subtema", "Empresa", "Vencedor?", "Usuário"]
+    for col, nome in zip(h_cols, headers):
+        col.markdown(f"**{nome}**")
+    
     st.divider()
 
-    for registro in reversed(dados):
+    for idx, registro in enumerate(dados_exibicao):
         idx_orig = st.session_state.historico.index(registro)
-        c = st.columns([1.5, 1.5, 1.5, 2, 1.5, 1, 1])
-        c[0].write(registro['num_comunicacao'])
-        c[1].write(registro['data'])
-        c[2].write(registro['empresa'])
-        c[3].write(registro['promotoria'])
-        c[4].write(registro['responsavel'])
         
-        if c[5].button("👁️", key=f"v_{idx_orig}"):
-            st.session_state.visualizando_registro = registro
-            st.rerun()
-        if c[6].button("🗑️", key=f"d_{idx_orig}"):
+        # Linha de dados
+        row = st.columns([0.8, 1.2, 1.2, 1.2, 2, 1.5, 1.2, 1.2, 1.2, 1, 1])
+        
+        # Coluna Ações (Apagar)
+        if row[0].button("🗑️", key=f"del_{idx_orig}"):
             st.session_state.historico.pop(idx_orig)
             with open(historico_file, 'w', encoding='utf-8') as f:
                 json.dump(st.session_state.historico, f, ensure_ascii=False, indent=2)
             st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# ============ 4. DETALHES (ABAIXO DA TABELA) ============
-if st.session_state.visualizando_registro is not None:
-    st.divider()
-    reg = st.session_state.visualizando_registro
-    st.markdown("### 📋 Detalhes da Ouvidoria")
-    
-    st.markdown('<div class="modal-container">', unsafe_allow_html=True)
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.markdown(f"**Nº Comunicação:** {reg.get('num_comunicacao')}")
-    with col2:
-        st.markdown(f"**Nº MPRJ:** {reg.get('num_mprj')}")
-    with col3:
-        st.markdown(f"**Data:** {reg.get('data')}")
-    
-    st.markdown(f"**Endereço:** {reg.get('endereco')}")
-    st.markdown(f"**Promotoria:** {reg.get('promotoria')} | **Município:** {reg.get('municipio')}")
-    st.markdown(f"**Tema:** {reg.get('tema')} | **Subtema:** {reg.get('subtema')} | **Empresa:** {reg.get('empresa')}")
-    
-    st.info(f"**Resumo:** {reg.get('resumo')}")
-    with st.expander("Ver Descrição Completa"):
-        st.write(reg.get('denuncia'))
+            
+        row[1].write(registro.get('num_comunicacao', 'N/A'))
+        row[2].write(registro.get('num_mprj', 'N/A'))
+        row[3].write(registro.get('data_envio', 'N/A'))
         
-    if st.button("❌ Fechar Visualização"):
-        st.session_state.visualizando_registro = None
-        st.rerun()
+        # Preview da denúncia (curto)
+        denuncia_curta = (registro.get('denuncia', '')[:30] + '...') if len(registro.get('denuncia', '')) > 30 else registro.get('denuncia', '')
+        row[4].write(denuncia_curta)
+        
+        row[5].write(registro.get('resumo', 'N/A'))
+        row[6].write(registro.get('tema', 'N/A'))
+        row[7].write(registro.get('subtema', 'N/A'))
+        row[8].write(registro.get('empresa', 'N/A'))
+        row[9].write(registro.get('consumidor_vencedor', 'N/A'))
+        row[10].write(registro.get('responsavel', 'N/A'))
+
+        # DROPDOWN "VER" (Detalhes da Ouvidoria)
+        with st.expander("🔽 Ver Detalhes Completos"):
+            st.markdown("#### 🔍 Detalhes da Ouvidoria")
+            d_col1, d_col2 = st.columns(2)
+            with d_col1:
+                st.write(f"**Nº de Comunicação:** {registro.get('num_comunicacao')}")
+                st.write(f"**Nº MPRJ:** {registro.get('num_mprj')}")
+                st.write(f"**Data:** {registro.get('data_envio')}")
+                st.write(f"**Endereço:** {registro.get('endereco')}")
+                st.write(f"**Município:** {registro.get('municipio')}")
+            with d_col2:
+                st.write(f"**Promotoria:** {registro.get('promotoria')}")
+                st.write(f"**Tema:** {registro.get('tema')}")
+                st.write(f"**Subtema:** {registro.get('subtema')}")
+                st.write(f"**Empresa:** {registro.get('empresa')}")
+                st.write(f"**Enviado por:** {registro.get('responsavel')}")
+            
+            st.text_area("Descrição Completa", value=registro.get('denuncia'), height=150, key=f"text_{idx_orig}")
+        
+        st.markdown('<hr style="margin:0; border-top: 1px solid #f0f2f6;">', unsafe_allow_html=True)
+
     st.markdown('</div>', unsafe_allow_html=True)
 
 st.divider()
-st.caption("SARO - Sistema Automático de Registro de Ouvidorias | MPRJ")
+st.caption("SARO v6.0 - Sistema Automático de Registro de Ouvidorias | MPRJ")
