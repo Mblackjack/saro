@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import json
 import os
 import unicodedata
@@ -14,9 +15,14 @@ class ClassificadorDenuncias:
 
         genai.configure(api_key=api_key)
         
-        # AJUSTE DEFINITIVO: Usando o modelo exato da sua lista de permissões
+        # AJUSTE: Adicionada configuração de temperatura para maior precisão
         self.model_name = 'models/gemini-flash-latest' 
-        self.model = genai.GenerativeModel(self.model_name)
+        self.model = genai.GenerativeModel(
+            model_name=self.model_name,
+            generation_config={
+                "temperature": 0.1,  # Baixa temperatura = respostas mais técnicas e menos criativas
+            }
+        )
         
         self.base_path = os.path.dirname(os.path.abspath(__file__))
         self.carregar_bases()
@@ -53,17 +59,27 @@ class ClassificadorDenuncias:
             {"promotoria": "Promotoria não identificada", "email": "N/A", "telefone": "N/A", "municipio_oficial": municipio_nome or "Não identificado"}
         )
 
-        temas_txt = ", ".join(self.temas_subtemas.keys())
+        # AJUSTE: Criando um catálogo detalhado para o prompt
+        catalogo_txt = ""
+        for tema, subtemas in self.temas_subtemas.items():
+            catalogo_txt += f"- TEMA: {tema} | SUBTEMAS: {', '.join(subtemas)}\n"
         
+        # AJUSTE: Prompt agora inclui subtemas e regra de resumo curto
         prompt = f"""Responda APENAS com um objeto JSON puro.
         Analise a denúncia: "{denuncia}"
-        Escolha um TEMA desta lista: {temas_txt}
+        
+        CATÁLOGO OFICIAL DE TEMAS E SUBTEMAS:
+        {catalogo_txt}
+        
+        REGRAS DE CLASSIFICAÇÃO:
+        1. Escolha um TEMA e um SUBTEMA que pertençam estritamente ao catálogo acima.
+        2. O campo 'resumo' deve ter NO MÁXIMO 10 PALAVRAS. Seja direto.
+        3. Identifique a empresa citada ou use "Não identificada".
         
         JSON esperado:
-        {{"tema": "...", "subtema": "...", "empresa": "...", "resumo": "Denúncia referente a..."}}"""
+        {{"tema": "...", "subtema": "...", "empresa": "...", "resumo": "..."}}"""
 
         try:
-            # Chamada ao modelo 2.0 que apareceu na sua lista
             response = self.model.generate_content(prompt)
             
             res_text = response.text.strip()
