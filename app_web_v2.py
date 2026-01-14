@@ -128,6 +128,7 @@ if st.session_state.resultado:
     
     st.info(f"**Promotoria Responsável:** {res['promotoria']}")
     st.markdown(f"📧 **E-mail:** {res['email']} | 📞 **Telefone:** {res['telefone']}")
+    st.write(f"📍 **Município:** {resultado['municipio']}") # Adicione esta linha aqui
     
     c1, c2, c3 = st.columns(3)
     with c1:
