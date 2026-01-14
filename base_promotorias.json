@@ -7,25 +7,25 @@
   },
   "Angra dos Reis": {
     "municipios": ["Angra dos Reis", "Mangaratiba", "Paraty"],
-    "promotoria": "1ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO ANGRA DOS REIS",
+    "promotoria": "SECRETARIA DA 1ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO ANGRA DOS REIS",
     "email": "pjtc.angra@mprj.mp.br",
     "telefone": "(24) 3365-2684"
   },
   "Araruama": {
     "municipios": ["Araruama", "São Pedro da Aldeia", "Iguaba Grande", "Saquarema", "Silva Jardim"],
-    "promotoria": "2ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO ARARUAMA",
+    "promotoria": "SECRETARIA DA 2ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO ARARUAMA",
     "email": "2pjtc.araruama@mprj.mp.br",
     "telefone": "(22) 2665 5360"
   },
   "Barra do Piraí": {
     "municipios": ["Barra do Piraí", "Piraí", "Valença", "Rio de Flores", "Paracambi"],
-    "promotoria": "1ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO BARRA DO PIRAÍ",
+    "promotoria": "SECRETARIA DA 1ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO BARRA DO PIRAÍ",
     "email": "1pjtc.bpirai@mprj.mp.br",
     "telefone": "(24) 2442-6235"
   },
   "Cabo Frio": {
     "municipios": ["Cabo Frio", "Arraial do Cabo", "Armação dos Búzios"],
-    "promotoria": "1ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO CABO FRIO",
+    "promotoria": "SECRETARIA DA 1ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO CABO FRIO",
     "email": "1pjtcocfr@mprj.mp.br",
     "telefone": "(22) 2647-7961"
   },
@@ -35,10 +35,16 @@
     "email": "2pjtcocgo@mprj.mp.br",
     "telefone": "(22) 2738-1075 / 2731-5542 / 2738-1335"
   },
-  "Cordeiro": {
-    "municipios": ["Cordeiro", "Macuco", "São Sebastião do Alto", "Trajano de Morais", "Bom Jardim", "Cantagalo", "Duas Barras", "Santa Maria Madalena"],
-    "promotoria": "PROMOTORIAS DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO CORDEIRO",
-    "email": "secpjtccor@mprj.mp.br",
+  "Cordeiro1": {
+    "municipios": ["Cordeiro", "Macuco", "São Sebastião do Alto", "Trajano de Morais"],
+    "promotoria": "SECRETARIA DA 1ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO CORDEIRO",
+    "email": "1pjtcocor@mprj.mp.br",
+    "telefone": "(22) 2551-2276"
+  },
+  "Cordeiro2": {
+    "municipios": ["Bom Jardim", "Cantagalo", "Duas Barras", "Santa Maria Madalena"],
+    "promotoria": "SECRETARIA DA 2ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO CORDEIRO",
+    "email": "2pjtcocor@mprj.mp.br",
     "telefone": "(22) 2551-2276"
   },
   "Duque de Caxias": {
@@ -49,20 +55,26 @@
   },
   "Itaboraí": {
     "municipios": ["Itaboraí", "Tanguá", "Rio Bonito"],
-    "promotoria": "2ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO ITABORAÍ",
+    "promotoria": "SECRETARIA DA 2ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO ITABORAÍ",
     "email": "2pjtc.itaborai@mprj.mp.br",
     "telefone": "3639-4818"
   },
   "Itaguaí": {
     "municipios": ["Itaguaí"],
-    "promotoria": "PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO ITAGUAÍ",
+    "promotoria": "SECRETARIA DA PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO ITAGUAÍ",
     "email": "pjtcoitg@mprj.mp.br",
     "telefone": ""
   },
-  "Itaperuna": {
-    "municipios": ["Itaperuna", "Varre-e-Sai", "Natividade", "Porciúncula", "Laje do Muriaé", "Italva", "Cardoso Moreira", "Bom Jesus do Itabapoana", "São José de Ubá"],
-    "promotoria": "PROMOTORIAS DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO ITAPERUNA",
+  "Itaperuna1": {
+    "municipios": ["Itaperuna", "Cardoso Moreira", "São José de Ubá"],
+    "promotoria": "SECRETARIA DA 1ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO ITAPERUNA",
     "email": "1pjtcoita@mprj.mp.br",
+    "telefone": "(22) 3824-5333"
+  },
+  "Itaperuna2": {
+    "municipios": ["Varre-e-Sai", "Natividade", "Porciúncula", "Laje do Muriaé", "Italva", "Bom Jesus do Itabapoana"],
+    "promotoria": "SECRETARIA DA 1ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO ITAPERUNA",
+    "email": "2pjtcoita@mprj.mp.br",
     "telefone": "(22) 3824-5333"
   },
   "Macaé": {
@@ -71,27 +83,33 @@
     "email": "pjtcomac@mprj.mp.br",
     "telefone": "(22) 2765-2979"
   },
-  "Magé": {
-    "municipios": ["Magé", "Guapimirim"],
-    "promotoria": "PROMOTORIAS DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO MAGÉ",
-    "email": "mage@mprj.mp.br",
+  "Magé1": {
+    "municipios": ["Guapimirim"],
+    "promotoria": "SECRETARIA DA 1ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO MAGÉ",
+    "email": "1pjtcomag@mprj.mp.br",
+    "telefone": "21-2633-4905 / 4139"
+  },
+  "Magé2": {
+    "municipios": ["Magé"],
+    "promotoria": "SECRETARIA DA 2ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO MAGÉ",
+    "email": "2pjtcomag@mprj.mp.br",
     "telefone": "21-2633-4905 / 4139"
   },
   "Maricá": {
     "municipios": ["Maricá"],
-    "promotoria": "PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO MARICÁ",
+    "promotoria": "SECRETARIA DA PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO MARICÁ",
     "email": "pjtcomar@mprj.mp.br",
     "telefone": "2717-6803"
   },
   "Niterói": {
     "municipios": ["Niterói"],
-    "promotoria": "PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DE DEFESA DO CONSUMIDOR E DO CONTRIBUINTE DO NÚCLEO NITERÓI",
+    "promotoria": "SECRETARIA DA PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DE DEFESA DO CONSUMIDOR E DO CONTRIBUINTE DO NÚCLEO NITERÓI",
     "email": "pjtccnit@mprj.mp.br",
     "telefone": "2718-9954 / 2717-2209 / 2620-8495"
   },
   "Nova Friburgo": {
     "municipios": ["Nova Friburgo", "Cachoeiras de Macacu"],
-    "promotoria": "1ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DE NOVA FRIBURGO",
+    "promotoria": "SECRETARIA DA 1ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DE NOVA FRIBURGO",
     "email": "1pjtconfr@mprj.mp.br",
     "telefone": "(22) 2533-1102"
   },
@@ -109,44 +127,50 @@
   },
   "Petrópolis": {
     "municipios": ["Petrópolis", "São José do Vale do Rio Preto"],
-    "promotoria": "2ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO PETRÓPOLIS",
+    "promotoria": "SECRETARIA DA 2ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO PETRÓPOLIS",
     "email": "2pjtcopet@mprj.mp.br",
     "telefone": "(24) 2246-2054 / 3052"
   },
   "Resende": {
     "municipios": ["Resende", "Porto Real", "Quatis", "Itatiaia"],
-    "promotoria": "2ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO RESENDE",
+    "promotoria": "SECRETARIA DA 2ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO RESENDE",
     "email": "2pjtcores@mprj.mp.br",
     "telefone": "(24) 3381-4640 / 3355-2421"
   },
   "São Gonçalo": {
     "municipios": ["São Gonçalo"],
-    "promotoria": "3ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO SÃO GONÇALO",
+    "promotoria": "SECRETARIA DA 3ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO SÃO GONÇALO",
     "email": "3pjtcosgo@mprj.mp.br",
     "telefone": "3713-5531 / 3707-3564"
   },
   "Teresópolis": {
     "municipios": ["Teresópolis", "Sumidouro"],
-    "promotoria": "1ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO TERESÓPOLIS",
+    "promotoria": "SECRETARIA DA 1ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO TERESÓPOLIS",
     "email": "1pjtcoter@mprj.mp.br",
     "telefone": "(21) 2742-2962 / 2742-2720 / 2742-1762"
   },
   "Três Rios": {
     "municipios": ["Areal", "Carmo", "Comendador Levy Gasparian", "Paraíba do Sul", "Sapucaia", "Três Rios"],
-    "promotoria": "1ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO TRÊS RIOS",
+    "promotoria": "SECRETARIA DA 1ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO TRÊS RIOS",
     "email": "1pjtcotri@mprj.mp.br",
     "telefone": "(24) 2255-2740 / 4495"
   },
   "Vassouras": {
     "municipios": ["Vassouras", "Mendes", "Engenheiro Paulo de Frontin", "Miguel Pereira", "Paty do Alferes"],
-    "promotoria": "PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO VASSOURAS",
+    "promotoria": "SECRETARIA DA PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO VASSOURAS",
     "email": "secpjtc.vassouras@mprj.mp.br",
     "telefone": "(24) 2471-2125 / 2471-3391"
   },
-  "Volta Redonda": {
-    "municipios": ["Volta Redonda", "Pinheiral", "Barra Mansa", "Rio Claro"],
-    "promotoria": "PROMOTORIAS DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO VOLTA REDONDA",
+  "Volta Redonda1": {
+    "municipios": ["Volta Redonda", "Pinheiral"],
+    "promotoria": "SECRETARIA DA 1ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO VOLTA REDONDA",
     "email": "1pjtcovre@mprj.mp.br",
+    "telefone": "(24) 3347-7201 / 7209"
+  },
+  "Volta Redonda2": {
+    "municipios": ["Volta Redonda", "Pinheiral", "Barra Mansa", "Rio Claro"],
+    "promotoria": "SECRETARIA DA 2ª PROMOTORIA DE JUSTIÇA DE TUTELA COLETIVA DO NÚCLEO VOLTA REDONDA",
+    "email": "2pjtcovre@mprj.mp.br",
     "telefone": "(24) 3347-7201 / 7209"
   }
 }
