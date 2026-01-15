@@ -16,7 +16,7 @@ class ClassificadorDenuncias:
         genai.configure(api_key=api_key)
         
         # AJUSTE: Adicionada configuração de temperatura para maior precisão
-        self.model_name = 'models/gemini-flash-latest' 
+        self.model_name = 'models/gemini-1.5-flash-8b' 
         self.model = genai.GenerativeModel(
             model_name=self.model_name,
             generation_config={
