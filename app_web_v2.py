@@ -108,7 +108,7 @@ with st.form("form_ouvidoria", clear_on_submit=True):
     with col_f2:
         consumidor_vencedor = st.radio("Consumidor vencedor?", options=["Sim", "Não"], horizontal=True)
         
-    submit = st.form_submit_button("🔍 PROCESSAR E CLASSIFICAR", use_container_width=True)
+    submit = st.form_submit_button("🔍 Registre a Ouvidoria", use_container_width=True)
 
 if submit:
     if not endereco or not denuncia:
