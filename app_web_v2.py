@@ -78,8 +78,8 @@ if os.path.exists(historico_file):
         st.session_state.historico = []
 
 # Cabeçalho
-st.title("⚖️ SARO - Sistema Automático de Registro de Ouvidorias")
-st.markdown("**Versão 6.2** | Gestão Institucional MPRJ")
+st.title("⚖️Sistema Automático de Registro de Ouvidorias (SARO)")
+st.markdown("**Versão 1.0** | Registro e Gestão de Ouvidorias com auxílio de Inteligência Artificial")
 st.divider()
 
 # Inicializar classificador
@@ -195,7 +195,7 @@ else:
     st.markdown('<div class="tabela-horizontal">', unsafe_allow_html=True)
     
     h_cols = st.columns([0.8, 1.2, 1.2, 1.2, 2, 1.5, 1.2, 1.2, 1.2, 1, 1])
-    headers = ["Ações", "Nº Com.", "Nº MPRJ", "Data", "Denúncia", "Resumo", "Tema", "Subtema", "Empresa", "Vencedor", "Usuário"]
+    headers = ["Ações", "Nº Com.", "Nº MPRJ", "Data", "Denúncia", "Resumo", "Tema", "Subtema", "Empresa", "Cons. Vencedor?", "Usuário"]
     for col, nome in zip(h_cols, headers):
         col.markdown(f'<p class="header-text">{nome}</p>', unsafe_allow_html=True)
     
@@ -249,4 +249,4 @@ else:
     st.markdown('</div>', unsafe_allow_html=True)
 
 st.divider()
-st.caption("SARO v6.2 - Sistema Automático de Registro de Ouvidorias | Ministério Público do Rio de Janeiro")
+st.caption("SARO v6.2 - Sistema Automático de Registro de Ouvidorias | Ministério Público do Rio de Janeiro (Created by Matheus Pereira Barreto [62006659]")
