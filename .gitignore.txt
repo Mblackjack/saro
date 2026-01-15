@@ -1,0 +1,9 @@
+# Arquivos de dados (Privados)
+base_consolidada_ouvidorias.xlsx
+historico_denuncias.json
+PENDENTE_REGISTRO_*.xlsx
+
+# Pastas de sistema e ambiente virtual
+__pycache__/
+.venv/
+.env
