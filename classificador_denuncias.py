@@ -16,28 +16,14 @@ class ClassificadorDenuncias:
 
         genai.configure(api_key=api_key)
         
-        # Tenta inicializar com fallback para evitar o erro 404
-        self.model = None
-        modelos_para_tentar = ["gemini-1.5-flash", "models/gemini-1.5-flash", "gemini-1.5-flash-latest"]
-        
-        for m_name in modelos_para_tentar:
-            try:
-                self.model = genai.GenerativeModel(
-                    model_name=m_name,
-                    generation_config={
-                        "temperature": 0.1,
-                        "response_mime_type": "application/json"
-                    }
-                )
-                self.model_name = m_name
-                # Teste rápido para validar o modelo
-                break
-            except:
-                continue
-
-        if not self.model:
-            st.error("❌ Erro: Não foi possível carregar o modelo Gemini. Verifique sua chave e região.")
-            st.stop()
+        # Modelo estável para evitar erro 404
+        self.model_name = 'gemini-3-flash-preview' 
+        self.model = genai.GenerativeModel(
+            model_name=self.model_name,
+            generation_config={
+                "temperature": 0.1,
+            }
+        )
         
         self.base_path = os.path.dirname(os.path.abspath(__file__))
         self.caminho_memoria = os.path.join(self.base_path, "memoria_empresas.json")
@@ -50,6 +36,7 @@ class ClassificadorDenuncias:
             with open(os.path.join(self.base_path, "base_promotorias.json"), 'r', encoding='utf-8') as f:
                 self.base_promotorias = json.load(f)
             
+            # Carregar memória de empresas
             if os.path.exists(self.caminho_memoria):
                 with open(self.caminho_memoria, 'r', encoding='utf-8') as f:
                     self.memoria_empresas = json.load(f)
@@ -65,33 +52,29 @@ class ClassificadorDenuncias:
         }
 
     def padronizar_empresa(self, nome_ia: str) -> str:
-        """
-        Garante que empresas iguais tenham o mesmo nome e 
-        novas empresas comecem com Letra Maiúscula.
-        """
-        if not nome_ia or nome_ia.lower() in ["não identificada", "n/a", "ignorado", "empresa não identificada"]:
+        """Aplica lógica de similaridade e formatação de texto"""
+        if not nome_ia or nome_ia.lower() in ["não identificada", "n/a", "ignorado"]:
             return "Não identificada"
 
-        # 1. Formatação Padrão: Title Case (Ex: "LOJAS AMERICANAS" -> "Lojas Americanas")
-        # .title() garante que toda palavra composta comece com Maiúscula
-        nome_formatado = nome_ia.strip().title()
+        # 1. Formatação: Letra Maiúscula no início de cada palavra (Title Case)
+        # Mantém preposições curtas em minúsculo se desejar, ou apenas title()
+        nome_limpo = nome_ia.strip().title()
 
-        # 2. Busca por similaridade (cutoff 0.8 = 80% de semelhança)
-        # Se encontrar 'Ampla S.A' na memória e a IA mandar 'Ampla', ele usa 'Ampla S.A'
-        similar = difflib.get_close_matches(nome_formatado, self.memoria_empresas, n=1, cutoff=0.8)
+        # 2. Busca por similaridade na memória (80% de semelhança)
+        similar = difflib.get_close_matches(nome_limpo, self.memoria_empresas, n=1, cutoff=0.8)
         
         if similar:
-            return similar[0] 
+            return similar[0] # Retorna o nome que já existia
         
-        # 3. Se for nova, salva na memória para as próximas consultas
-        self.memoria_empresas.append(nome_formatado)
+        # 3. Se é nova, adiciona na memória e salva
+        self.memoria_empresas.append(nome_limpo)
         try:
             with open(self.caminho_memoria, 'w', encoding='utf-8') as f:
                 json.dump(list(set(self.memoria_empresas)), f, ensure_ascii=False, indent=4)
         except:
             pass
             
-        return nome_formatado
+        return nome_limpo
 
     def remover_acentos(self, texto: str) -> str:
         if not texto: return ""
@@ -114,33 +97,36 @@ class ClassificadorDenuncias:
         for tema, subtemas in self.temas_subtemas.items():
             catalogo_txt += f"- TEMA: {tema} | SUBTEMAS: {', '.join(subtemas)}\n"
         
-        prompt = f"""Responda obrigatoriamente em formato JSON.
+        prompt = f"""Responda APENAS com um objeto JSON puro.
         Analise a denúncia: "{denuncia}"
         
         CATÁLOGO OFICIAL:
         {catalogo_txt}
         
         REGRAS:
-        1. 'tema' e 'subtema' devem vir do catálogo.
-        2. 'resumo' deve ter no máximo 10 palavras.
-        3. 'empresa': extraia o nome comercial.
+        1. Escolha TEMA e SUBTEMA do catálogo.
+        2. 'resumo' com no MÁXIMO 10 PALAVRAS.
+        3. No campo 'empresa', extraia apenas o nome próprio da empresa citada.
         
-        Formato: {{"tema": "...", "subtema": "...", "empresa": "...", "resumo": "..."}}"""
+        JSON esperado:
+        {{"tema": "...", "subtema": "...", "empresa": "...", "resumo": "..."}}"""
 
         try:
             response = self.model.generate_content(prompt)
             res_text = response.text.strip()
             
-            # Remove blocos de markdown se a IA ignorar o mime_type
+            # Limpeza de Markdown se houver
             if "```json" in res_text:
                 res_text = res_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in res_text:
+                res_text = res_text.split("```")[1].split("```")[0].strip()
             
             dados_ia = json.loads(res_text)
         except Exception as e:
             st.error(f"Erro na análise: {e}")
-            dados_ia = {"tema": "Serviços", "subtema": "Não identificado", "empresa": "Não identificada", "resumo": "Erro técnico."}
+            dados_ia = {"tema": "Serviços", "subtema": "Erro técnico", "empresa": "Não identificada", "resumo": "Falha no processamento."}
 
-        # Aplica a padronização solicitada
+        # APLICAÇÃO DA NOVA REGRA DE EMPRESA
         empresa_final = self.padronizar_empresa(dados_ia.get("empresa", "Não identificada"))
 
         return {
