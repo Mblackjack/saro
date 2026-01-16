@@ -17,7 +17,7 @@ class ClassificadorDenuncias:
         genai.configure(api_key=api_key)
         
         # Modelo estável para evitar erro 404
-        self.model_name = 'gemini-flash-latest' 
+        self.model_name = 'gemini-1.5-flash' 
         self.model = genai.GenerativeModel(
             model_name=self.model_name,
             generation_config={
