@@ -26,7 +26,7 @@ class ClassificadorDenuncias:
             st.error(f"❌ Erro na conexão OpenAI: {e}")
             st.stop()
         
-        self.model_name = "gpt-4o-mini"
+        self.model_name = "gpt-4o"
         self.base_path = os.path.dirname(os.path.abspath(__file__))
         self.carregar_bases()
 
