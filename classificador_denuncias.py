@@ -15,12 +15,14 @@ class ClassificadorDenuncias:
 
         genai.configure(api_key=api_key)
         
-        # AJUSTE: Adicionada configuração de temperatura para maior precisão
-        self.model_name = 'models/gemini-1.5-flash' 
+        # AJUSTE: Usando a versão estável que suporta alto volume (1500 req/dia)
+        # Removido o prefixo 'models/' caso ele esteja causando o erro 404
+        self.model_name = 'gemini-1.5-flash' 
+        
         self.model = genai.GenerativeModel(
             model_name=self.model_name,
             generation_config={
-                "temperature": 0.1,  # Baixa temperatura = respostas mais técnicas e menos criativas
+                "temperature": 0.1,  # Respostas técnicas e diretas
             }
         )
         
@@ -29,6 +31,7 @@ class ClassificadorDenuncias:
 
     def carregar_bases(self):
         try:
+            # Tenta carregar os arquivos JSON de suporte
             with open(os.path.join(self.base_path, "base_temas_subtemas.json"), 'r', encoding='utf-8') as f:
                 self.temas_subtemas = json.load(f)
             with open(os.path.join(self.base_path, "base_promotorias.json"), 'r', encoding='utf-8') as f:
@@ -59,12 +62,10 @@ class ClassificadorDenuncias:
             {"promotoria": "Promotoria não identificada", "email": "N/A", "telefone": "N/A", "municipio_oficial": municipio_nome or "Não identificado"}
         )
 
-        # AJUSTE: Criando um catálogo detalhado para o prompt
         catalogo_txt = ""
         for tema, subtemas in self.temas_subtemas.items():
             catalogo_txt += f"- TEMA: {tema} | SUBTEMAS: {', '.join(subtemas)}\n"
         
-        # AJUSTE: Prompt agora inclui subtemas e regra de resumo curto
         prompt = f"""Responda APENAS com um objeto JSON puro.
         Analise a denúncia: "{denuncia}"
         
@@ -80,10 +81,11 @@ class ClassificadorDenuncias:
         {{"tema": "...", "subtema": "...", "empresa": "...", "resumo": "..."}}"""
 
         try:
+            # Chamada principal para a IA
             response = self.model.generate_content(prompt)
-            
             res_text = response.text.strip()
-            # Limpeza de Markdown
+
+            # Limpeza de possíveis blocos de código Markdown
             if "```json" in res_text:
                 res_text = res_text.split("```json")[1].split("```")[0].strip()
             elif "```" in res_text:
@@ -91,8 +93,9 @@ class ClassificadorDenuncias:
             
             dados_ia = json.loads(res_text)
         except Exception as e:
-            st.error(f"Erro na análise: {e}")
-            dados_ia = {"tema": "Serviços", "subtema": "Erro técnico", "empresa": "Não identificada", "resumo": "Falha no processamento."}
+            # Se a IA falhar ou a cota estourar, retorna um valor padrão para não quebrar o app
+            st.warning(f"Aviso: IA em modo de espera ou erro de cota ({e})")
+            dados_ia = {"tema": "Serviços", "subtema": "Erro técnico", "empresa": "Não identificada", "resumo": "Falha no processamento automático."}
 
         return {
             "num_comunicacao": num_comunicacao, "num_mprj": num_mprj,
