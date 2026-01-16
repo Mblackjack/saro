@@ -17,7 +17,7 @@ class ClassificadorDenuncias:
         
         # AJUSTE: Usando a versão estável que suporta alto volume (1500 req/dia)
         # Removido o prefixo 'models/' caso ele esteja causando o erro 404
-        self.model_name = 'gemini-1.5-flash' 
+        self.model_name = 'gemini-pro' 
         
         self.model = genai.GenerativeModel(
             model_name=self.model_name,
