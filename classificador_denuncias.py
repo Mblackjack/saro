@@ -11,25 +11,16 @@ from datetime import datetime
 class ClassificadorDenuncias:
     def __init__(self):
         api_key = st.secrets.get("GOOGLE_API_KEY")
-        if not api_key:
-            st.error("❌ GOOGLE_API_KEY não configurada.")
-            st.stop()
-
         genai.configure(api_key=api_key)
         
-        # Fallback de modelos
-        self.model = None
-        for nome in ['gemini-1.5-flash', 'models/gemini-1.5-flash', 'gemini-1.5-flash-latest']:
-            try:
-                self.model = genai.GenerativeModel(model_name=nome, generation_config={"temperature": 0.1})
-                break
-            except:
-                continue
+        # Seleção de modelo estável
+        self.model = genai.GenerativeModel(
+            model_name='gemini-1.5-flash',
+            generation_config={"temperature": 0.1, "response_mime_type": "application/json"}
+        )
 
         self.base_path = os.path.dirname(os.path.abspath(__file__))
         self.carregar_bases()
-        
-        # Conexão com Google Sheets
         self.conn = st.connection("gsheets", type=GSheetsConnection)
 
     def carregar_bases(self):
@@ -48,18 +39,21 @@ class ClassificadorDenuncias:
         return "".join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
     def salvar_na_planilha_online(self, dados: dict):
-        """Adiciona os dados na planilha Google Sheets Online"""
         try:
             url = st.secrets.get("GSHEET_URL")
-            # Lê os dados atuais
-            df_atual = self.conn.read(spreadsheet=url, usecols=list(range(12)))
-            # Cria nova linha
+            # Lê dados existentes (ou cria DF vazio se falhar)
+            try:
+                df_atual = self.conn.read(spreadsheet=url)
+            except:
+                df_atual = pd.DataFrame()
+
             nova_linha = pd.DataFrame([dados])
-            # Concatena e atualiza
             df_final = pd.concat([df_atual, nova_linha], ignore_index=True)
+            
+            # Atualiza a planilha online
             self.conn.update(spreadsheet=url, data=df_final)
         except Exception as e:
-            st.warning(f"⚠️ Erro ao sincronizar com Excel Online: {e}")
+            st.error(f"Erro ao salvar no Excel Online: {e}")
 
     def processar_denuncia(self, endereco, denuncia, num_com, num_mprj, vencedor, responsavel):
         # Localização
@@ -72,17 +66,17 @@ class ClassificadorDenuncias:
                 promotoria = info["promotoria"]
                 break
 
-        # IA
-        catalogo = json.dumps(self.temas_subtemas, ensure_ascii=False)
-        prompt = f"Analise em JSON: {denuncia}. Catálogo: {catalogo}. Retorne: tema, subtema, empresa, resumo(10 palavras)."
+        # IA Prompt
+        prompt = f"""Analise a denúncia e retorne JSON: "{denuncia}". 
+        Campos: tema, subtema, empresa, resumo (máx 10 palavras)."""
         
         try:
             res = self.model.generate_content(prompt)
-            dados_ia = json.loads(res.text.replace('```json', '').replace('```', ''))
+            dados_ia = json.loads(res.text)
         except:
-            dados_ia = {"tema": "Outros", "subtema": "Geral", "empresa": "Não identificada", "resumo": "Processado manualmente"}
+            dados_ia = {"tema": "Outros", "subtema": "Geral", "empresa": "Não identificada", "resumo": "Erro na análise"}
 
-        # Resultado final formatado para a Planilha
+        # Estrutura exata solicitada por você
         resultado = {
             "Nº Comunicação": num_com,
             "Nº MPRJ": num_mprj,
@@ -93,12 +87,10 @@ class ClassificadorDenuncias:
             "Resumo": dados_ia.get("resumo"),
             "Tema": dados_ia.get("tema"),
             "Subtema": dados_ia.get("subtema"),
-            "Empresa": dados_ia.get("empresa", "").strip().title(),
+            "Empresa": dados_ia.get("empresa", "").title(),
             "É Consumidor Vencedor?": vencedor,
             "Enviado por:": responsavel
         }
 
-        # Envia para o Excel Online
         self.salvar_na_planilha_online(resultado)
-        
         return resultado
