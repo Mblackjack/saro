@@ -5,7 +5,6 @@ import unicodedata
 import streamlit as st
 import google.generativeai as genai
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection
 from datetime import datetime
 
 class ClassificadorDenuncias:
@@ -13,15 +12,14 @@ class ClassificadorDenuncias:
         api_key = st.secrets.get("GOOGLE_API_KEY")
         genai.configure(api_key=api_key)
         
-        # Seleção de modelo estável
         self.model = genai.GenerativeModel(
             model_name='gemini-1.5-flash',
-            generation_config={"temperature": 0.1, "response_mime_type": "application/json"}
+            generation_config={"temperature": 0.1}
         )
 
         self.base_path = os.path.dirname(os.path.abspath(__file__))
+        self.caminho_excel = os.path.join(self.base_path, "Ouvidorias_SARO_Oficial.xlsx")
         self.carregar_bases()
-        self.conn = st.connection("gsheets", type=GSheetsConnection)
 
     def carregar_bases(self):
         with open(os.path.join(self.base_path, "base_temas_subtemas.json"), 'r', encoding='utf-8') as f:
@@ -38,25 +36,24 @@ class ClassificadorDenuncias:
         if not texto: return ""
         return "".join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
-    def salvar_na_planilha_online(self, dados: dict):
+    def salvar_no_excel(self, dados: dict):
+        """Salva localmente no servidor do Streamlit"""
         try:
-            url = st.secrets.get("GSHEET_URL")
-            # Lê dados existentes (ou cria DF vazio se falhar)
-            try:
-                df_atual = self.conn.read(spreadsheet=url)
-            except:
-                df_atual = pd.DataFrame()
-
-            nova_linha = pd.DataFrame([dados])
-            df_final = pd.concat([df_atual, nova_linha], ignore_index=True)
+            df_novo = pd.DataFrame([dados])
+            if os.path.exists(self.caminho_excel):
+                df_antigo = pd.read_excel(self.caminho_excel)
+                df_final = pd.concat([df_antigo, df_novo], ignore_index=True)
+            else:
+                df_final = df_novo
             
-            # Atualiza a planilha online
-            self.conn.update(spreadsheet=url, data=df_final)
+            df_final.to_excel(self.caminho_excel, index=False)
+            return True
         except Exception as e:
-            st.error(f"Erro ao salvar no Excel Online: {e}")
+            st.error(f"Erro ao salvar arquivo: {e}")
+            return False
 
     def processar_denuncia(self, endereco, denuncia, num_com, num_mprj, vencedor, responsavel):
-        # Localização
+        # 1. Localização
         municipio_nome = "Não identificado"
         promotoria = "Não identificada"
         end_upper = self.remover_acentos(endereco.upper())
@@ -66,17 +63,17 @@ class ClassificadorDenuncias:
                 promotoria = info["promotoria"]
                 break
 
-        # IA Prompt
-        prompt = f"""Analise a denúncia e retorne JSON: "{denuncia}". 
-        Campos: tema, subtema, empresa, resumo (máx 10 palavras)."""
-        
+        # 2. IA
+        prompt = f"Analise esta denúncia e retorne APENAS um JSON com tema, subtema, empresa e resumo (máx 10 palavras): {denuncia}"
         try:
             res = self.model.generate_content(prompt)
-            dados_ia = json.loads(res.text)
+            # Limpeza básica do texto para garantir o JSON
+            json_text = res.text.replace('```json', '').replace('```', '').strip()
+            dados_ia = json.loads(json_text)
         except:
-            dados_ia = {"tema": "Outros", "subtema": "Geral", "empresa": "Não identificada", "resumo": "Erro na análise"}
+            dados_ia = {"tema": "Outros", "subtema": "Geral", "empresa": "Não identificada", "resumo": "Verificar descrição"}
 
-        # Estrutura exata solicitada por você
+        # 3. Formatação conforme sua solicitação
         resultado = {
             "Nº Comunicação": num_com,
             "Nº MPRJ": num_mprj,
@@ -87,10 +84,10 @@ class ClassificadorDenuncias:
             "Resumo": dados_ia.get("resumo"),
             "Tema": dados_ia.get("tema"),
             "Subtema": dados_ia.get("subtema"),
-            "Empresa": dados_ia.get("empresa", "").title(),
+            "Empresa": dados_ia.get("empresa", "").strip().title(),
             "É Consumidor Vencedor?": vencedor,
             "Enviado por:": responsavel
         }
 
-        self.salvar_na_planilha_online(resultado)
+        self.salvar_no_excel(resultado)
         return resultado
