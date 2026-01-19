@@ -1,80 +1,108 @@
 # -*- coding: utf-8 -*-
-import streamlit as st
+import json
 import os
-from classificador_denuncias import ClassificadorDenuncias
+import unicodedata
+import streamlit as st
+import google.generativeai as genai
+from typing import Dict, Optional
 
-st.set_page_config(page_title="SARO - MPRJ", layout="wide")
+class ClassificadorDenuncias:
+    def __init__(self):
+        api_key = st.secrets.get("GOOGLE_API_KEY")
+        if not api_key:
+            st.error("❌ GOOGLE_API_KEY não configurada nos Secrets.")
+            st.stop()
 
-st.markdown("""
-<style>
-    .resumo-box { background-color: #f0f2f6; padding: 15px; border-radius: 8px; border-left: 5px solid #960018; }
-    div.stButton > button:first-child { background-color: #960018 !important; color: white !important; font-weight: bold; }
-    .titulo-custom { color: #960018; font-weight: bold; }
-</style>
-""", unsafe_allow_html=True)
-
-if "resultado" not in st.session_state:
-    st.session_state.resultado = None
-
-try:
-    classificador = ClassificadorDenuncias()
-except Exception as e:
-    st.error(f"Erro ao iniciar sistema: {e}")
-    st.stop()
-
-# Sidebar para Download
-st.sidebar.image("https://www.mprj.mp.br/mprj-theme/images/mprj/logo_mprj.png", width=180)
-st.sidebar.markdown("---")
-st.sidebar.subheader("📂 Base de Dados Excel")
-
-excel_path = os.path.join(os.path.dirname(__file__), "Ouvidorias_SARO_Oficial.xlsx")
-if os.path.exists(excel_path):
-    with open(excel_path, "rb") as f:
-        st.sidebar.download_button(
-            label="📥 Baixar Excel Atualizado",
-            data=f,
-            file_name="Ouvidorias_SARO.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
+        genai.configure(api_key=api_key)
+        
+        # AJUSTE: Adicionada configuração de temperatura para maior precisão
+        self.model_name = 'models/gemini-flash-latest' 
+        self.model = genai.GenerativeModel(
+            model_name=self.model_name,
+            generation_config={
+                "temperature": 0.1,  # Baixa temperatura = respostas mais técnicas e menos criativas
+            }
         )
-else:
-    st.sidebar.info("O Excel será gerado após o primeiro registro.")
+        
+        self.base_path = os.path.dirname(os.path.abspath(__file__))
+        self.carregar_bases()
 
-st.title("⚖️ Sistema Automático de Registro de Ouvidorias (SARO)")
+    def carregar_bases(self):
+        try:
+            with open(os.path.join(self.base_path, "base_temas_subtemas.json"), 'r', encoding='utf-8') as f:
+                self.temas_subtemas = json.load(f)
+            with open(os.path.join(self.base_path, "base_promotorias.json"), 'r', encoding='utf-8') as f:
+                self.base_promotorias = json.load(f)
+        except Exception as e:
+            st.error(f"❌ Erro nas bases JSON: {e}")
+            st.stop()
+            
+        self.municipio_para_promotoria = {
+            m.upper(): {"promotoria": d["promotoria"], "email": d["email"], "telefone": d["telefone"], "municipio_oficial": m}
+            for nucleo, d in self.base_promotorias.items() for m in d["municipios"]
+        }
 
-with st.form("form_registro", clear_on_submit=True):
-    st.markdown('<p class="titulo-custom">📝 Novo Registro</p>', unsafe_allow_html=True)
-    c1, c2 = st.columns(2)
-    num_com = c1.text_input("Nº de Comunicação")
-    num_mprj = c2.text_input("Nº MPRJ")
-    endereco = st.text_input("Endereço Completo")
-    denuncia = st.text_area("Descrição da Ouvidoria")
-    
-    f1, f2 = st.columns(2)
-    responsavel = f1.radio("Enviado por:", ["Elias", "Matheus", "Ana Beatriz", "Sônia", "Priscila"], horizontal=True)
-    vencedor = f2.radio("Consumidor vencedor?", ["Sim", "Não"], horizontal=True)
-    
-    if st.form_submit_button("REGISTRAR E SALVAR", use_container_width=True):
-        if endereco and denuncia:
-            with st.spinner("Processando..."):
-                st.session_state.resultado = classificador.processar_denuncia(endereco, denuncia, num_com, num_mprj, vencedor, responsavel)
-                st.success("✅ Registrado com sucesso!")
-                st.rerun()
-        else:
-            st.error("Preencha Endereço e Denúncia.")
+    def remover_acentos(self, texto: str) -> str:
+        if not texto: return ""
+        return "".join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
-if st.session_state.resultado:
-    res = st.session_state.resultado
-    st.divider()
-    st.markdown('<p class="titulo-custom">✅ Resultado da Classificação Atual</p>', unsafe_allow_html=True)
-    
-    col_a, col_b, col_c = st.columns(3)
-    col_a.metric("Empresa", res["Empresa"])
-    col_b.metric("Tema", res["Tema"])
-    col_c.metric("Município", res["Município"])
-    
-    st.write(f"**🏛️ Promotoria:** {res['Promotoria']}")
-    st.markdown(f"**Resumo da IA:**")
-    st.markdown(f'<div class="resumo-box">{res["Resumo"]}</div>', unsafe_allow_html=True)
+    def processar_denuncia(self, endereco: str, denuncia: str, num_comunicacao: str = "", num_mprj: str = "") -> Dict:
+        municipio_nome = None
+        end_upper = self.remover_acentos(endereco.upper())
+        for m_chave in self.municipio_para_promotoria.keys():
+            if self.remover_acentos(m_chave) in end_upper:
+                municipio_nome = self.municipio_para_promotoria[m_chave]["municipio_oficial"]
+                break
+        
+        prom_info = self.municipio_para_promotoria.get(
+            municipio_nome.upper() if municipio_nome else "", 
+            {"promotoria": "Promotoria não identificada", "email": "N/A", "telefone": "N/A", "municipio_oficial": municipio_nome or "Não identificado"}
+        )
 
-st.caption("SARO v2.0 - Ministério Público do Rio de Janeiro")
+        # AJUSTE: Criando um catálogo detalhado para o prompt
+        catalogo_txt = ""
+        for tema, subtemas in self.temas_subtemas.items():
+            catalogo_txt += f"- TEMA: {tema} | SUBTEMAS: {', '.join(subtemas)}\n"
+        
+        # AJUSTE: Prompt agora inclui subtemas e regra de resumo curto
+        prompt = f"""Responda APENAS com um objeto JSON puro.
+        Analise a denúncia: "{denuncia}"
+        
+        CATÁLOGO OFICIAL DE TEMAS E SUBTEMAS:
+        {catalogo_txt}
+        
+        REGRAS DE CLASSIFICAÇÃO:
+        1. Escolha um TEMA e um SUBTEMA que pertençam estritamente ao catálogo acima.
+        2. O campo 'resumo' deve ter NO MÁXIMO 10 PALAVRAS. Seja direto.
+        3. Identifique a empresa citada ou use "Não identificada".
+        
+        JSON esperado:
+        {{"tema": "...", "subtema": "...", "empresa": "...", "resumo": "..."}}"""
+
+        try:
+            response = self.model.generate_content(prompt)
+            
+            res_text = response.text.strip()
+            # Limpeza de Markdown
+            if "```json" in res_text:
+                res_text = res_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in res_text:
+                res_text = res_text.split("```")[1].split("```")[0].strip()
+            
+            dados_ia = json.loads(res_text)
+        except Exception as e:
+            st.error(f"Erro na análise: {e}")
+            dados_ia = {"tema": "Serviços", "subtema": "Erro técnico", "empresa": "Não identificada", "resumo": "Falha no processamento."}
+
+        return {
+            "num_comunicacao": num_comunicacao, "num_mprj": num_mprj,
+            "endereco": endereco, "denuncia": denuncia,
+            "municipio": prom_info["municipio_oficial"],
+            "promotoria": prom_info["promotoria"],
+            "email": prom_info["email"],
+            "telefone": prom_info["telefone"],
+            "tema": dados_ia.get("tema", "Serviços"),
+            "subtema": dados_ia.get("subtema", "Não identificado"),
+            "empresa": dados_ia.get("empresa", "Não identificada"),
+            "resumo": dados_ia.get("resumo", "Resumo indisponível")
+        }
