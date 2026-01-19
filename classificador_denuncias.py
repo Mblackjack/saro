@@ -141,5 +141,3 @@ class ClassificadorDenuncias:
             "empresa": empresa_final,
             "resumo": dados_ia.get("resumo", "Resumo indisponível")
         }
-
-Quero que coloque a parte do excel nele
