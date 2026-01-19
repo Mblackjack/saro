@@ -250,5 +250,3 @@ else:
 
 st.divider()
 st.caption("SARO v1.0 - Sistema Automático de Registro de Ouvidorias | Ministério Público do Rio de Janeiro (Created by Matheus Pereira Barreto [62006659])")
-
-Melhore a identação desse código
