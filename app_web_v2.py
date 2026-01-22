@@ -11,7 +11,7 @@ from datetime import datetime
 from classificador_denuncias import ClassificadorDenuncias
 
 # Configuração da página
-st.set_page_config(page_title="SARO - Sistema de Ouvidorias", layout="wide")
+st.set_page_config(page_title="SARO - Sistema de Ouvidorias", layout="wide",page_icon="⚖️")
 
 # ============ AJUSTE DE CAMINHOS ============
 base_path = os.path.dirname(os.path.abspath(__file__))
