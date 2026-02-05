@@ -3,8 +3,9 @@ import json
 import os
 import unicodedata
 import streamlit as st
-from openai import OpenAI  # Biblioteca oficial da OpenAI
+from openai import OpenAI
 from datetime import datetime
+import requests
 
 class ClassificadorDenuncias:
     def __init__(self):
@@ -15,9 +16,9 @@ class ClassificadorDenuncias:
             st.stop()
             
         self.client = OpenAI(api_key=api_key)
-        self.model_name = "gpt-4o-mini" # Versão rápida, barata e potente
+        self.model_name = "gpt-4o-mini"
         
-        # Webhook do Power Automate (Link que você gerou)
+        # Webhook do Power Automate (SharePoint)
         self.webhook_url = st.secrets.get("SHAREPOINT_WEBHOOK")
         
         self.base_path = os.path.dirname(os.path.abspath(__file__))
@@ -55,16 +56,16 @@ class ClassificadorDenuncias:
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=[
-                    {"role": "system", "content": f"Você é um classificador do MPRJ. Use este catálogo: {catalogo}. Responda APENAS JSON."},
+                    {"role": "system", "content": f"Você é um classificador do MPRJ. Use este catálogo: {catalogo}. Responda APENAS JSON puro."},
                     {"role": "user", "content": f"Classifique: {denuncia}. Retorne chaves: tema, subtema, empresa, resumo (máx 10 palavras)."}
                 ],
                 response_format={"type": "json_object"}
             )
             dados_ia = json.loads(response.choices[0].message.content)
-        except Exception as e:
-            dados_ia = {"tema": "Outros", "subtema": "Geral", "empresa": "Não identificada", "resumo": "Erro no GPT"}
+        except Exception:
+            dados_ia = {"tema": "Outros", "subtema": "Geral", "empresa": "Não identificada", "resumo": "Erro na classificação"}
 
-        # 3. Montar dados finais
+        # 3. Montar pacote de dados
         dados_final = {
             "num_com": num_com,
             "num_mprj": num_mprj,
@@ -81,12 +82,9 @@ class ClassificadorDenuncias:
         }
 
         # 4. Envio para o SharePoint (Power Automate)
-        import requests
         sucesso = False
         if self.webhook_url:
             try:
-                # Mesmo que o Power Automate peça premium, se você salvou o fluxo, 
-                # a URL pode funcionar por um período de teste ou se sua conta tiver crédito.
                 resp = requests.post(self.webhook_url, json=dados_final, timeout=15)
                 sucesso = resp.status_code in [200, 202]
             except:
